@@ -138,3 +138,14 @@
 - style(podui): 在 `:root` 增加令牌别名与焦点环（`--pod-panel-bg`, `--pod-border-color`, `--pod-text-primary`, `--pod-radius-xs`, `--pod-transition-fast`, `--pod-ring-color/width/ring`, `--pod-accent`, `--toolbar-bg-color`），保证组件变量完备
 - fix(i18n): `BananaSidebar/QuickPrompts` 不再通过 `t()` 读取数组，改为 `translations[language]`；向 `PromptBar` 传 `language` 并下游接线，修复 `(p || []).slice(...).map is not a function`
 - verify: 通过 `npm run lint`、`npx tsc --noEmit`、`npm run build`；预览交互正常
+
+## v1.1.7 (2025-12-11)
+
+- style(banana-button): 多次迭代完成香蕉按钮设计，最终采用“仅 Logo + 轻交互”的极简扁平风格；保持点击区域 40px 不变
+- feat(banana-sidebar): 增大 Logo 尺寸，移除背景与装饰层，交互为悬停轻微缩放与亮度调整；`BananaSidebar.tsx` 直接渲染 `BananaIcon`
+- style(podui): 早期尝试“五彩斑斓的黑”暗色渐变，后统一为透明背景以更贴合整体 UI 的扁平化与极简方向
+- docs/release: 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.1.7`
+
+验证说明：
+- 打开页面，查看侧边香蕉按钮：仅显示 Logo，悬停略微放大（约 1.06×）并轻微提亮；按下缩小（约 0.96×）；点击热区仍为 `40×40`
+- 运行 `npm run lint`、`npx tsc --noEmit`、`npm run build` 均通过，预览交互正常
