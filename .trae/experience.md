@@ -61,3 +61,13 @@
 - 仅返回文字：加强输出约束，提示“只输出 data:image/png;base64”，并减少说明性文本。
 - `InvalidCharacterError/ERR_INVALID_URL`：检查是否未做 Base64 归一化或混入非 Base64字符；统一走归一化与 Blob 加载。
 - 非图像响应：对 `http` 返回先校验 `content-type`，非 `image/*` 直接提示并中止尺寸解析。
+
+## 拖拽导入与导航拦截经验
+
+- 捕获阶段优先：在画布 `<svg>` 与根容器添加 `onDragOverCapture/onDropCapture`，捕获阶段统一 `preventDefault` 与 `dropEffect='copy'`，避免单图触发浏览器默认导航。
+- 全局兜底：在 `document/window` 捕获阶段绑定 `dragenter/dragover/dragleave/drop` 并输出轻量日志 `[GlobalDND]`，覆盖 `foreignObject` 内部控件的事件路径差异。
+- `foreignObject` 差异：SVG 内部 `foreignObject` 承载的 HTML 区域可能导致冒泡阶段监听失效；捕获阶段拦截可消除该差异的影响。
+- URL 兼容策略：除扩展名匹配外，尝试 `fetch(url)` 后以 `blob.type` 判断是否为 `image/*`，支持无扩展名 CDN/签名链接的图片拖拽导入。
+- 数据提取稳健性：优先使用 `dataTransfer.items` 获取 `File`，无则回退 `dataTransfer.files`；仅当无文件时解析 `text/uri-list/text/plain`。
+- 并发与内存控制：按 `navigator.hardwareConcurrency` 计算并发；当总字节超过 200MB 时降为 1，避免大图批量拖入导致内存峰值过高。
+- 预览布局防重叠：在拖拽预览与批量导入布局中计算现有元素边界，尝试网格偏移避免重叠（dragover 尝试 60 次，导入尝试 200 次），确保矩阵预览与最终位置不冲突。

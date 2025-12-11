@@ -34,6 +34,10 @@ interface CanvasProps {
   cursor: string;
   handleStopEditing: () => void;
   canvasBackgroundColor?: string;
+  onDragEnter?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
 }
 export const Canvas: React.FC<CanvasProps> = ({
   svgRef,
@@ -63,6 +67,10 @@ export const Canvas: React.FC<CanvasProps> = ({
   cursor,
   handleStopEditing,
   canvasBackgroundColor,
+  onDragEnter,
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }) => {
   const isElementVisible = (element: Element, allElements: Element[]): boolean => {
     if (element.isVisible === false) return false;
@@ -80,6 +88,12 @@ export const Canvas: React.FC<CanvasProps> = ({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onContextMenu={handleContextMenu}
+      onDragOverCapture={(e) => { e.preventDefault(); if ((e as React.DragEvent).dataTransfer) (e as React.DragEvent).dataTransfer.dropEffect = 'copy'; }}
+      onDropCapture={(e) => { e.preventDefault(); }}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       style={{ '--canvas-cursor': cursor, '--canvas-bg': canvasBackgroundColor } as React.CSSProperties}
       className="w-full h-full pod-canvas-root"
     >

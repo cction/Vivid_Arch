@@ -1,6 +1,13 @@
-# BananaPod｜图像生成与编辑工作台（v1.1.7）
+# BananaPod｜图像生成与编辑工作台（v1.1.8）
 
 轻量、可扩展的图像生成与编辑工作台，采用 PodUI 主题。统一第三方 API 为 OpenAI 风格接口（基于 `whatai.cc`），支持图层系统、裁剪与合并、双语界面、iPad/Apple Pencil 场景。
+
+## 核心更新（v1.1.8）
+- 修复：单图拖入画布可能直接在浏览器打开的问题；在捕获阶段拦截 `dragover/drop` 并统一阻止默认行为，确保导入流程
+- 兼容：扩展 URL 导入，基于 `Content-Type: image/*` 自动识别无扩展名图片链接
+- 体验：禁用拖拽预览占位符渲染，保留导入阶段初始占位符
+- 调试：在 `items/files/uri-list` 与 `foreignObject` 落点分支增加调试日志
+- 验证：通过 `npm run lint` 与 `npm run build`；预览交互与导入流程回归正常
 
 ## 核心更新（v1.1.7）
 - 香蕉按钮迭代为“仅 Logo + 轻交互”的极简扁平风格，点击热区保持 `40×40`
@@ -86,12 +93,13 @@ BananaPod/
 - 应用内密钥保存在 `localStorage`，不会在日志中打印；仅在请求头附加
 
 ## 版本与发布
-- 当前版本：`1.1.7`
+- 当前版本：`1.1.8`
 - 关键变更：
-  - 香蕉按钮改为“仅 Logo + 轻交互”的极简扁平风格（热区 `40×40`）
-  - 去除背景与装饰层；`podui.css` 统一为透明背景与轻交互样式
-  - `BananaSidebar.tsx` 直接渲染 `BananaIcon`，提升一致性与可维护性
-  - 文档与元数据版本号同步到 `v1.1.7`
+  - 修复单图拖入画布可能直接在浏览器打开的问题（捕获阶段拦截 `dragover/drop`）
+  - URL 导入兼容无扩展名链接（基于 `Content-Type: image/*` 自动识别）
+  - 禁用拖拽预览占位符渲染，保留导入阶段初始占位符
+  - 增加拖拽与导入路径的调试日志，便于排查问题
+  - 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.1.8`
 
 ## 致谢
 - 模型：`nano-banana` 系列、`gemini-3-pro-image-preview`

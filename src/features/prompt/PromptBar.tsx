@@ -102,9 +102,21 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     const ratioPortalRef = useRef<HTMLDivElement>(null);
     const blockCollapseUntilRef = useRef<number>(0);
     const [expandedWidth, setExpandedWidth] = useState<number>(580);
+    const [maxTextareaHeight, setMaxTextareaHeight] = useState<number>(240);
 
     useEffect(() => {
         const apply = () => setExpandedWidth(computeExpandedWidth());
+        apply();
+        const onResize = () => apply();
+        window.addEventListener('resize', onResize, { passive: true });
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+    useEffect(() => {
+        const apply = () => {
+            const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+            const target = Math.min(360, Math.max(160, Math.round(vh * 0.4)));
+            setMaxTextareaHeight(target);
+        };
         apply();
         const onResize = () => apply();
         window.addEventListener('resize', onResize, { passive: true });
@@ -165,10 +177,13 @@ export const PromptBar: React.FC<PromptBarProps> = ({
         if (!el) return;
         let raf = requestAnimationFrame(() => {
             el.style.height = 'auto';
-            el.style.height = `${el.scrollHeight}px`;
+            const sh = el.scrollHeight;
+            const mh = maxTextareaHeight;
+            el.style.height = `${Math.min(sh, mh)}px`;
+            el.style.overflowY = sh > mh ? 'auto' : 'hidden';
         });
         return () => cancelAnimationFrame(raf);
-    }, [prompt]);
+    }, [prompt, maxTextareaHeight]);
 
     
 
@@ -247,31 +262,31 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                 }}
                 transition={{
                     borderRadius: isExpanded ? {
-                        duration: 0.12,
+                        duration: 0.06,
                         ease: "easeOut",
                         delay: 0
                     } : {
-                        type: "spring",
-                        stiffness: 600,
-                        damping: 35,
+                        type: "tween",
+                        ease: "easeOut",
+                        duration: 0.06,
                         delay: 0
                     },
                     width: {
-                        type: "spring",
-                        stiffness: 600,
-                        damping: 35,
+                        type: "tween",
+                        ease: [0.16, 1, 0.3, 1],
+                        duration: 0.1,
                         delay: 0
                     },
                     height: {
                         type: "tween",
                         ease: [0.16, 1, 0.3, 1],
-                        duration: 0.15,
+                        duration: 0.1,
                         delay: 0
                     },
                     default: {
-                        type: "spring",
-                        stiffness: 600,
-                        damping: 35,
+                        type: "tween",
+                        ease: "easeOut",
+                        duration: 0.1,
                         delay: 0
                     }
                 }}
@@ -283,8 +298,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                         <motion.div
                             key="collapsed"
                             initial={{ opacity: 0 }}
-                            animate={{ opacity: 1, transition: { duration: 0.15, delay: 0 } }}
-                            exit={{ opacity: 0, transition: { duration: 0.1, delay: 0 } }}
+                            animate={{ opacity: 1, transition: { duration: 0.1, delay: 0 } }}
+                            exit={{ opacity: 0, transition: { duration: 0.08, delay: 0 } }}
                             className="absolute inset-0 flex items-center gap-3 w-full px-3 cursor-pointer"
                             onClick={() => setIsExpanded(true)}
                         >
@@ -310,8 +325,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                         <motion.div
                             key="expanded"
                             initial={{ opacity: 0 }}
-                            animate={{ opacity: 1, transition: { duration: 0.2, delay: 0 } }}
-                            exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                            animate={{ opacity: 1, transition: { duration: 0.12, delay: 0 } }}
+                            exit={{ opacity: 0, transition: { duration: 0.08 } }}
                             className="flex flex-col px-3 pt-1 pb-3 gap-0"
                             style={{ width: expandedWidth }}
                             ref={expandedContentRef}
@@ -365,8 +380,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                     onChange={(e) => setPrompt((e.target as HTMLTextAreaElement).value)}
                                     onKeyDown={handleKeyDown}
                                     placeholder={getPlaceholderText()}
-                                    className="pod-prompt-textarea"
-                                    style={{ '--pod-textarea-padding': textareaPadding } as React.CSSProperties}
+                                    className="pod-prompt-textarea pod-scrollbar-y"
+                                    style={{ '--pod-textarea-padding': textareaPadding, maxHeight: `${maxTextareaHeight}px` } as React.CSSProperties}
                                     disabled={isLoading}
                                     autoFocus
                                 />

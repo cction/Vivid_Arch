@@ -20,21 +20,19 @@ const withBase = (p: string) => {
 };
 
 const BananaIcon: React.FC<{ size?: number }> = ({ size = 40 }) => {
-  const primary = withBase('logo/icons8-banana-100.png');
-  const fallback = withBase('logo/BA-color.png');
-  const svgFallback = withBase('logo/OpenMoji-color_1F34C.svg');
+  const primary = withBase('logo/AIVA.svg');
+  const fallback = withBase('logo/AIVA.svg');
   return (
     <img
       src={primary}
       width={size}
       height={size}
-      alt="banana"
+      alt="aiva"
       className="block"
       onError={(e) => {
         const t = e.currentTarget;
         t.onerror = null;
         t.src = fallback;
-        setTimeout(() => { if (t.naturalWidth === 0) t.src = svgFallback; }, 0);
       }}
     />
   );
@@ -176,25 +174,13 @@ export const BananaSidebar: React.FC<BananaSidebarProps> = ({ language, setPromp
         aria-label="Banana Presets"
         title="Banana Presets"
         aria-pressed={isOpen}
-        className="pod-banana-trigger pod-inner-gradient-ring"
+        className="pod-banana-trigger"
         style={{
           height: buttonSize || 40,
           width: buttonSize || 40,
         }}
       >
-        {/* Inner glass */}
-          <span className="pod-banana-trigger-inner">
-          {/* Soft highlight sweep */}
-          <span className="pod-banana-sheen" />
-
-          {/* Gentle top rim glow */}
-          <span className="pod-banana-glow" />
-
-          {/* Icon centered for circular button */}
-          <span className="relative z-[1]">
-            <BananaIcon size={Math.max(18, (buttonSize || 40) - 8)} />
-          </span>
-        </span>
+        <BananaIcon size={Math.max(18, (buttonSize || 40) - 2)} />
       </button>
       
       {isOpen && anchor && createPortal(

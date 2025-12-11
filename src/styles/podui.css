@@ -245,13 +245,13 @@
   inset: var(--pod-ring-width, 2px);
   border-radius: inherit;
   padding: 1px; /* width of the inner ring */
-  background: linear-gradient(to bottom, rgba(255,255,255,0.3), rgba(255,255,255,0));
+  background: none;
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0;
 }
 
 /* Context Toolbar container */
@@ -791,12 +791,12 @@
   border: 0;
   border-radius: 9999px;
   overflow: hidden;
-  background: linear-gradient(135deg, #ff6fb3 0%, #3ba6ff 50%, #ffb36b 100%);
-  box-shadow: 0 8px 24px rgba(59,166,255,0.35), 0 2px 6px rgba(0,0,0,0.25);
+  background: transparent;
+  box-shadow: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.2s, filter 0.2s, transform 0.12s;
+  transition: filter 0.12s;
 }
 .pod-banana-trigger:disabled {
   cursor: not-allowed;
@@ -808,12 +808,29 @@
 }
 
 .pod-banana-trigger:active {
-  transform: scale(0.98);
+  transform: none;
   filter: brightness(1.02);
 }
 .pod-banana-trigger[aria-pressed="true"] {
-  transform: scale(0.985);
-  filter: brightness(1.06) saturate(1.1);
+  transform: none;
+  filter: brightness(1.03);
+}
+
+.pod-banana-trigger:hover {
+  filter: brightness(1.03);
+}
+
+.pod-banana-trigger img {
+  transition: transform var(--transition-speed-fast), filter var(--transition-speed-fast);
+}
+.pod-banana-trigger:hover img {
+  transform: scale(1.06);
+  filter: brightness(1.05);
+}
+.pod-banana-trigger:active img,
+.pod-banana-trigger[aria-pressed="true"] img {
+  transform: scale(0.96);
+  filter: brightness(1.02);
 }
 
 .pod-banana-trigger-inner {
@@ -825,11 +842,11 @@
   height: 100%;
   border-radius: 9999px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -8px 18px rgba(59, 166, 255, 0.22);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  padding: 6px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 2px;
   box-sizing: border-box;
   color: rgba(255,255,255,0.95);
 }
@@ -838,13 +855,14 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(-65deg, transparent 40%, rgba(255,255,255,0.35) 50%, transparent 70%);
-  background-size: 200% 100%;
+  background: none;
+  background-size: auto;
   background-repeat: no-repeat;
-  animation: pod-chip-sheen 4.8s ease-in-out infinite;
+  animation: none;
   pointer-events: none;
   border-radius: inherit;
   mix-blend-mode: screen;
+  opacity: 0;
 }
 
 /* Prompt Bar Specifics */
@@ -920,9 +938,10 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(120% 60% at 50% -10%, rgba(255,255,255,0.35), transparent 55%);
+  background: none;
   pointer-events: none;
   border-radius: inherit;
+  opacity: 0;
 }
 
 /* Banana panel overrides */
@@ -1584,6 +1603,3 @@
   right: var(--pod-right, auto);
   bottom: var(--pod-bottom, auto);
 }
-
-
-

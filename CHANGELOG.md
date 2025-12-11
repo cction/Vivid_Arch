@@ -149,3 +149,15 @@
 验证说明：
 - 打开页面，查看侧边香蕉按钮：仅显示 Logo，悬停略微放大（约 1.06×）并轻微提亮；按下缩小（约 0.96×）；点击热区仍为 `40×40`
 - 运行 `npm run lint`、`npx tsc --noEmit`、`npm run build` 均通过，预览交互正常
+
+## v1.1.8 (2025-12-11)
+
+- fix(drag-import): 单图拖入画布可能直接在浏览器打开的问题；在捕获阶段拦截 `dragover/drop` 并统一阻止默认行为，确保导入流程
+- feat(url-import): 兼容无扩展名图片链接，基于 `Content-Type: image/*` 自动识别并导入
+- style(import-preview): 禁用拖拽预览占位符渲染，保留导入阶段初始占位符
+- chore(debug): 在 `items/files/uri-list` 与 `foreignObject` 落点分支增加调试日志
+- verify: 通过 `npm run lint` 与 `npm run build`；预览交互与导入流程回归正常
+- docs/release: 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.1.8`
+
+验证说明：
+- 单图/多图拖拽到画布与 `foreignObject` 均导入，不会触发浏览器直接打开；URL（含无扩展名）导入识别正确

@@ -167,13 +167,20 @@ const App: React.FC = () => {
     }, [imageModel]);
 
     useEffect(() => {
-        const onDragOver = (e: DragEvent) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; };
-        const onDrop = (e: DragEvent) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; };
-        window.addEventListener('dragover', onDragOver);
-        window.addEventListener('drop', onDrop);
+        const prevent = (e: DragEvent) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; try { const node = e.target instanceof Element ? e.target.nodeName : ''; console.log('[GlobalDND]', e.type, node); } catch { void 0; } };
+        document.addEventListener('dragenter', prevent, { capture: true });
+        document.addEventListener('dragover', prevent, { capture: true });
+        document.addEventListener('dragleave', prevent, { capture: true });
+        document.addEventListener('drop', prevent, { capture: true });
+        window.addEventListener('dragover', prevent, { capture: true });
+        window.addEventListener('drop', prevent, { capture: true });
         return () => {
-            window.removeEventListener('dragover', onDragOver);
-            window.removeEventListener('drop', onDrop);
+            document.removeEventListener('dragenter', prevent, true);
+            document.removeEventListener('dragover', prevent, true);
+            document.removeEventListener('dragleave', prevent, true);
+            document.removeEventListener('drop', prevent, true);
+            window.removeEventListener('dragover', prevent, true);
+            window.removeEventListener('drop', prevent, true);
         };
     }, []);
 
@@ -308,7 +315,7 @@ const App: React.FC = () => {
 
 
     return (
-        <div className="w-screen h-screen flex flex-col font-sans podui-theme" onDragEnter={handleDragOver} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+        <div className="w-screen h-screen flex flex-col font-sans podui-theme" onDragOverCapture={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }} onDropCapture={(e) => { e.preventDefault(); }} onDragEnter={handleDragOver} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
             {isLoading && <Loader progressMessage={progressMessage} />}
             <ErrorToast error={error} onClose={() => setError(null)} />
             <BoardPanel
@@ -397,6 +404,10 @@ const App: React.FC = () => {
                     handleMouseMove={handleMouseMove}
                     handleMouseUp={handleMouseUp}
                     handleContextMenu={handleContextMenu}
+                    onDragEnter={handleDragOver}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
                     lassoPath={lassoPath}
                     alignmentGuides={alignmentGuides}
                     getSelectionBounds={getSelectionBounds}

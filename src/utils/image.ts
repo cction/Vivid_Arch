@@ -168,6 +168,60 @@ export async function getBase64ImageSize(base64: string, mimeType?: string): Pro
   } catch { return null; }
 }
 
+export async function getImageSizeFromBlob(blob: Blob): Promise<{ width: number; height: number } | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    if (typeof createImageBitmap === 'function') {
+      const bmp = await createImageBitmap(blob);
+      const w = bmp.width;
+      const h = bmp.height;
+      try { bmp.close(); } catch { /* noop */ }
+      return w && h ? { width: w, height: h } : null;
+    }
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = () => reject(new Error('Failed to load blob image for size')); i.src = url; });
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      return w && h ? { width: w, height: h } : null;
+    } finally { URL.revokeObjectURL(url); }
+  } catch { return null; }
+}
+
+export async function resizeBlobToMax(blob: Blob, mimeType?: string, maxWidth = 2048, maxHeight = 2048): Promise<{ dataUrl: string; width: number; height: number; scale: number } | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    let imgBitmap: ImageBitmap | null = null;
+    let imgEl: HTMLImageElement | null = null;
+    let width = 0, height = 0;
+    if (typeof createImageBitmap === 'function') {
+      imgBitmap = await createImageBitmap(blob);
+      width = imgBitmap.width;
+      height = imgBitmap.height;
+    } else {
+      const url = URL.createObjectURL(blob);
+      try {
+        imgEl = await new Promise<HTMLImageElement>((resolve, reject) => { const el = new Image(); el.onload = () => resolve(el); el.onerror = () => reject(new Error('Failed to load blob image for resize')); el.src = url; });
+        width = imgEl.naturalWidth || imgEl.width;
+        height = imgEl.naturalHeight || imgEl.height;
+      } finally { URL.revokeObjectURL(url); }
+    }
+    if ((!imgBitmap && !imgEl) || !width || !height) return null;
+    const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+    const targetW = Math.max(1, Math.floor(width * scale));
+    const targetH = Math.max(1, Math.floor(height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW; canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    if (imgBitmap) { ctx.drawImage(imgBitmap, 0, 0, targetW, targetH); try { imgBitmap.close(); } catch { /* noop */ } }
+    else if (imgEl) { ctx.drawImage(imgEl, 0, 0, targetW, targetH); }
+    const outMime = (mimeType && mimeType.startsWith('image/')) ? mimeType : 'image/png';
+    const dataUrl = canvas.toDataURL(outMime);
+    return { dataUrl, width: targetW, height: targetH, scale };
+  } catch { return null; }
+}
+
 export async function resizeBase64ToMax(base64: string, mimeType?: string, maxWidth = 2048, maxHeight = 2048): Promise<{ base64: string; width: number; height: number; scale: number } | null> {
   const size = await getImageSize(base64, mimeType);
   if (!size) return null;

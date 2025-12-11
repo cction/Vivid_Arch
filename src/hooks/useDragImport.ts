@@ -4,7 +4,7 @@ import type { MutableRefObject, Dispatch, SetStateAction } from 'react'
 import type { Element, ImageElement, Point, Tool } from '@/types'
 import { getElementBounds } from '@/utils/canvas'
 import { fileToDataUrl } from '@/utils/fileUtils'
-import { resizeBase64ToMax, getImageSize, PLACEHOLDER_DATA_URL } from '@/utils/image'
+import { resizeBase64ToMax, getImageSize, PLACEHOLDER_DATA_URL, getImageSizeFromBlob, resizeBlobToMax } from '@/utils/image'
 
 type Deps = {
   svgRef: MutableRefObject<SVGSVGElement | null>
@@ -47,6 +47,7 @@ async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit: numb
 }
 
 export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelectedElementIds, setActiveTool, setError, setIsLoading, setProgressMessage, generateId, elementsRef }: Deps) {
+  type ItemInfo = { file: File; mimeType: string; width: number; height: number; scale: number; dataUrl?: string }
   const handleAddImageElement = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
       setError('Only image files are supported.')
@@ -91,22 +92,37 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
     if (setIsLoading) setIsLoading(true)
     if (setProgressMessage) setProgressMessage('Analyzing images...')
     let analyzed = 0
-    const infoFns = imageFiles.map((file) => {
+    const infoFns: Array<() => Promise<ItemInfo>> = imageFiles.map((file) => {
       return async () => {
-        const { dataUrl, mimeType } = await fileToDataUrl(file)
-        const size = await getImageSize(dataUrl, mimeType)
-        if (!size || !size.width || !size.height) throw new Error('image load error')
-        const scale = Math.min(2048 / size.width, 2048 / size.height, 1)
-        const w = Math.max(1, Math.floor(size.width * scale))
-        const h = Math.max(1, Math.floor(size.height * scale))
+        const mimeType = file.type || 'image/png'
+        const size = await getImageSizeFromBlob(file)
+        if (size && size.width && size.height) {
+          const scale = Math.min(2048 / size.width, 2048 / size.height, 1)
+          const w = Math.max(1, Math.floor(size.width * scale))
+          const h = Math.max(1, Math.floor(size.height * scale))
+          analyzed++
+          if (setProgressMessage) setProgressMessage(`Analyzed ${analyzed}/${imageFiles.length}`)
+          return { file, mimeType, width: w, height: h, scale }
+        }
+        const { dataUrl } = await fileToDataUrl(file)
+        const s2 = await getImageSize(dataUrl, mimeType)
+        if (!s2 || !s2.width || !s2.height) throw new Error('image load error')
+        const scale = Math.min(2048 / s2.width, 2048 / s2.height, 1)
+        const w = Math.max(1, Math.floor(s2.width * scale))
+        const h = Math.max(1, Math.floor(s2.height * scale))
         analyzed++
         if (setProgressMessage) setProgressMessage(`Analyzed ${analyzed}/${imageFiles.length}`)
         return { file, mimeType, dataUrl, width: w, height: h, scale }
       }
     })
+    const totalBytesRaw = imageFiles.reduce((s, f) => s + (f.size || 0), 0)
     const hc = (typeof navigator !== 'undefined' && typeof navigator.hardwareConcurrency === 'number') ? navigator.hardwareConcurrency : 4
-    const limit = Math.max(2, Math.min(6, Math.floor(hc / 2)))
+    const baseLimit = Math.max(2, Math.min(6, Math.floor(hc / 2)))
+    const limit = totalBytesRaw > 209715200 ? 1 : baseLimit
     const items = await runWithConcurrency(infoFns, limit)
+    const pm2 = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory
+    const totalBytes = imageFiles.reduce((s, f) => s + (f.size || 0), 0)
+    if (pm2) console.log('[DragImport] analyzed items', { count: items.length, totalBytes, mem: pm2 })
     if (items.length === 0) { setError('Failed to load image.'); if (setIsLoading) setIsLoading(false); if (setProgressMessage) setProgressMessage(''); return }
     if (!svgRef.current) return
     const svgBounds = svgRef.current.getBoundingClientRect()
@@ -189,11 +205,17 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
     setActiveTool('select')
     if (setProgressMessage) setProgressMessage('Loading previews...')
     let previewed = 0
-    const previewFns = items.map((it, idx) => {
+    const previewFns = items.map((it: ItemInfo, idx: number) => {
       return async () => {
-        const thumb = await resizeBase64ToMax(it.dataUrl, it.mimeType, 128, 128)
-        const thHref = thumb && thumb.scale < 1 ? `data:${it.mimeType};base64,${thumb.base64}` : it.dataUrl
-        setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: thHref } : el)))
+        let thHref: string | null = null
+        if (it.dataUrl) {
+          const thumb = await resizeBase64ToMax(it.dataUrl, it.mimeType, 128, 128)
+          thHref = thumb && thumb.scale < 1 ? `data:${it.mimeType};base64,${thumb.base64}` : it.dataUrl
+        } else {
+          const thumb = await resizeBlobToMax(it.file, it.mimeType, 128, 128)
+          thHref = thumb ? thumb.dataUrl : null
+        }
+        if (thHref) setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: thHref } : el)))
         previewed++
         if (setProgressMessage) setProgressMessage(`Loaded previews ${previewed}/${n}`)
       }
@@ -201,14 +223,21 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
     await runWithConcurrency(previewFns, limit)
     if (setProgressMessage) setProgressMessage('Importing images...')
     let imported = 0
-    const updateFns = items.map((it, idx) => {
+    const updateFns = items.map((it: ItemInfo, idx: number) => {
       return async () => {
         if (it.scale >= 1) {
-          setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: it.dataUrl } : el)))
+          const url = URL.createObjectURL(it.file)
+          setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: url } : el)))
         } else {
-          const resized = await resizeBase64ToMax(it.dataUrl, it.mimeType, 2048, 2048)
-          const used = resized && resized.scale < 1 ? `data:${it.mimeType};base64,${resized.base64}` : it.dataUrl
-          setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: used } : el)))
+          if (it.dataUrl) {
+            const resized = await resizeBase64ToMax(it.dataUrl, it.mimeType, 2048, 2048)
+            const used = resized && resized.scale < 1 ? `data:${it.mimeType};base64,${resized.base64}` : it.dataUrl
+            setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: used } : el)))
+          } else {
+            const resized = await resizeBlobToMax(it.file, it.mimeType, 2048, 2048)
+            const used = resized ? resized.dataUrl : undefined
+            if (used) setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: used } : el)))
+          }
         }
         imported++
         if (setProgressMessage) setProgressMessage(`Imported ${imported}/${n}`)
@@ -221,107 +250,71 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    const dt = e.dataTransfer
-    const items = dt && dt.items ? Array.from(dt.items) : []
-    let count = 0
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i]
-      if (it.kind === 'file') {
-        const tp = (it.type || '').toLowerCase()
-        if (tp.startsWith('image/') || tp === '') count++
-      }
-    }
-    if (count <= 0) {
-      setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))
-      return
-    }
-    if (!svgRef.current) return
-    const anchor = getCanvasPoint(e.clientX, e.clientY)
-    const n = count
-    const cols = Math.max(1, Math.ceil(Math.sqrt(n)))
-    const rows = Math.max(1, Math.ceil(n / cols))
-    const w = 128
-    const h = 128
-    const colWidths: number[] = Array.from({ length: cols }, () => 0)
-    const rowHeights: number[] = Array.from({ length: rows }, () => 0)
-    for (let i = 0; i < n; i++) {
-      const r = Math.floor(i / cols)
-      const c = i % cols
-      rowHeights[r] = Math.max(rowHeights[r], h)
-      colWidths[c] = Math.max(colWidths[c], w)
-    }
-    const gapX = 32
-    const gapY = 32
-    const totalW = colWidths.reduce((a, b) => a + b, 0) + (cols - 1) * gapX
-    const totalH = rowHeights.reduce((a, b) => a + b, 0) + (rows - 1) * gapY
-    const startX = anchor.x - totalW / 2
-    const startY = anchor.y - totalH / 2
-    const colPrefix: number[] = []
-    const rowPrefix: number[] = []
-    for (let i = 0, acc = 0; i < cols; i++) { colPrefix[i] = acc; acc += colWidths[i] }
-    for (let i = 0, acc = 0; i < rows; i++) { rowPrefix[i] = acc; acc += rowHeights[i] }
-    const existingRects = elementsRef.current
-      .filter(el => el.isVisible !== false)
-      .map(el => getElementBounds(el, elementsRef.current))
-    const overlapsAny = (rects: { x: number; y: number; w: number; h: number }[]) => {
-      for (let i = 0; i < rects.length; i++) {
-        const a = rects[i]
-        for (let j = 0; j < existingRects.length; j++) {
-          const b = existingRects[j]
-          const inter = a.x < b.x + b.width && a.x + a.w > b.x && a.y < b.y + b.height && a.y + a.h > b.y
-          if (inter) return true
-        }
-      }
-      return false
-    }
-    let bestOffsetX = 0
-    let bestOffsetY = 0
-    const maxAttempts = 60
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const dx = (attempt % 10) * gapX
-      const dy = Math.floor(attempt / 10) * gapY
-      const rects: { x: number; y: number; w: number; h: number }[] = []
-      for (let i = 0; i < n; i++) {
-        const r = Math.floor(i / cols)
-        const c = i % cols
-        const x = startX + colPrefix[c] + c * gapX + dx
-        const y = startY + rowPrefix[r] + r * gapY + dy
-        rects.push({ x, y, w, h })
-      }
-      if (!overlapsAny(rects)) { bestOffsetX = dx; bestOffsetY = dy; break }
-    }
-    const previews: ImageElement[] = []
-    for (let i = 0; i < n; i++) {
-      const r = Math.floor(i / cols)
-      const c = i % cols
-      const x = startX + colPrefix[c] + c * gapX + bestOffsetX
-      const y = startY + rowPrefix[r] + r * gapY + bestOffsetY
-      previews.push({ id: generateId(), type: 'image', name: '[DragPreview]', x, y, width: w, height: h, href: PLACEHOLDER_DATA_URL, mimeType: 'image/png', opacity: 60 })
-    }
-    setElements(prev => {
-      const cleaned = prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]'))
-      return [...cleaned, ...previews]
-    })
+    e.stopPropagation()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+    setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))
   }, [svgRef, getCanvasPoint, setElements, elementsRef, generateId])
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    try {
+      const targ = e.target
+      const tn = targ instanceof globalThis.Element ? targ.nodeName : ''
+      const isFO = targ instanceof globalThis.Element ? Boolean(targ.closest('foreignObject')) : false
+      console.log('[DragImport] drop', tn, isFO)
+    } catch { void 0 }
     setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))
+    const pm = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory
+    if (pm) console.log('[DragImport] mem before drop', pm)
     const dt = e.dataTransfer
     let files: File[] = []
-    if (dt && dt.items && dt.items.length > 0) {
-      files = Array.from(dt.items).map(it => it.kind === 'file' ? it.getAsFile() : null).filter((f): f is File => !!f)
+    if (dt?.items && dt.items.length > 0) {
+      const items: DataTransferItem[] = Array.from(dt.items)
+      files = items.map((it: DataTransferItem) => it.kind === 'file' ? it.getAsFile() : null).filter((f): f is File => !!f)
     }
     if ((!files || files.length === 0) && dt && dt.files && dt.files.length > 0) {
       files = Array.from(dt.files)
     }
     if (files && files.length > 0) {
+      console.log('[DragImport] drop files', files.map(f => ({ name: f.name, type: f.type })), 'at', { x: e.clientX, y: e.clientY })
       const anchor = getCanvasPoint(e.clientX, e.clientY)
+      console.log('[DragImport] anchor canvas point', anchor)
       handleAddImageElements(files, anchor)
+    } else {
+      const dtAny = dt as unknown as { getData?: (t: string) => string }
+      const raw = dtAny && typeof dtAny.getData === 'function' ? (dtAny.getData('text/uri-list') || dtAny.getData('text/plain')) : ''
+      const url = (raw || '').trim()
+      if (url && /^https?:\/\/.*\.(png|jpe?g|gif|webp|bmp|tiff)(\?.*)?$/i.test(url)) {
+        fetch(url)
+          .then(r => r.blob())
+          .then(blob => {
+            const name = url.split('/').pop() || 'Dropped Image'
+            const f = new File([blob], name, { type: blob.type || 'image/png' })
+            const anchor2 = getCanvasPoint(e.clientX, e.clientY)
+            handleAddImageElements([f], anchor2)
+          })
+          .catch(() => { void 0 })
+      } else if (url && /^https?:\/\//i.test(url)) {
+        console.log('[DragImport] url no-ext or unknown content-type candidate', url)
+        fetch(url)
+          .then(r => r.blob())
+          .then(blob => {
+            const tp = blob.type || ''
+            if (tp.toLowerCase().startsWith('image/')) {
+              const name = url.split('/').pop() || 'Dropped Image'
+              const f = new File([blob], name, { type: tp || 'image/png' })
+              const anchor2 = getCanvasPoint(e.clientX, e.clientY)
+              handleAddImageElements([f], anchor2)
+            }
+          })
+          .catch(() => { void 0 })
+      }
     }
   }, [getCanvasPoint, handleAddImageElements, setElements])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))
   }, [setElements])
 

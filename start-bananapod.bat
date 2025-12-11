@@ -62,8 +62,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [OK] launching Electron at http://localhost:%USE_PORT%/
-start "BananaPod Electron" cmd /k "set VITE_DEV_SERVER_URL=http://localhost:%USE_PORT%/ && npm run start:electron:auto"
+echo [OK] dev server ready at http://localhost:%USE_PORT%/
+start "" "http://localhost:%USE_PORT%/"
 pause
 exit /b 0
 
