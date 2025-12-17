@@ -72,7 +72,11 @@ const App: React.FC = () => {
 
     const activeBoard = useMemo(() => boards.find(b => b.id === activeBoardId) || boards[0], [boards, activeBoardId]);
 
-    const { elements, history, historyIndex, panOffset, zoom, canvasBackgroundColor } = activeBoard;
+    const { elements, history, historyIndex, panOffset, zoom, canvasBackgroundColor: rawCanvasBackgroundColor } = activeBoard;
+
+    const DEFAULT_CANVAS_BG = '#0F0D13';
+    const isValidHexColor = (v: unknown): v is string => typeof v === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v);
+    const canvasBackgroundColor = isValidHexColor(rawCanvasBackgroundColor) ? rawCanvasBackgroundColor : DEFAULT_CANVAS_BG;
 
     const [activeTool, setActiveTool] = useState<Tool>('select');
     const [drawingOptions, setDrawingOptions] = useState({ strokeColor: '#ef4444', strokeWidth: 5 }); // matches --color-red-500
@@ -105,14 +109,23 @@ const App: React.FC = () => {
         try { localStorage.setItem('API_PROVIDER', apiProvider) } catch { void 0 }
     }, [apiProvider]);
 
+    const getAllowedImageModels = (provider: 'WHATAI' | 'Grsai') => {
+        return provider === 'Grsai' ? ['nano-banana', 'nano-banana-pro'] : ['nano-banana', 'nano-banana-2'];
+    };
+    const normalizeImageModelForProvider = (provider: 'WHATAI' | 'Grsai', model: string | null | undefined) => {
+        const allowed = getAllowedImageModels(provider);
+        const v = model || '';
+        return allowed.includes(v) ? v : allowed[0];
+    };
+
     useEffect(() => {
         try {
             if (apiProvider === 'Grsai') {
-                const m = localStorage.getItem('GRSAI_IMAGE_MODEL') || 'nano-banana'
-                setImageModel(m)
+                const m = localStorage.getItem('GRSAI_IMAGE_MODEL');
+                setImageModel(normalizeImageModelForProvider('Grsai', m));
             } else {
-                const m = localStorage.getItem('WHATAI_IMAGE_MODEL') || (process.env.WHATAI_IMAGE_MODEL as string) || 'gemini-2.5-flash-image'
-                setImageModel(m)
+                const m = localStorage.getItem('WHATAI_IMAGE_MODEL') || (process.env.WHATAI_IMAGE_MODEL as string);
+                setImageModel(normalizeImageModelForProvider('WHATAI', m));
             }
         } catch { void 0 }
     }, [apiProvider])
@@ -130,11 +143,14 @@ const App: React.FC = () => {
         try {
             const provider = (localStorage.getItem('API_PROVIDER') as 'WHATAI' | 'Grsai') || 'WHATAI'
             if (provider === 'Grsai') {
-                return localStorage.getItem('GRSAI_IMAGE_MODEL') || 'nano-banana'
+                const m = localStorage.getItem('GRSAI_IMAGE_MODEL');
+                return (m === 'nano-banana' || m === 'nano-banana-pro') ? m : 'nano-banana';
             }
-            return localStorage.getItem('WHATAI_IMAGE_MODEL') || (process.env.WHATAI_IMAGE_MODEL as string) || 'gemini-2.5-flash-image'
+            const m = localStorage.getItem('WHATAI_IMAGE_MODEL') || (process.env.WHATAI_IMAGE_MODEL as string);
+            return (m === 'nano-banana' || m === 'nano-banana-2') ? m : 'nano-banana';
         } catch {
-            return (process.env.WHATAI_IMAGE_MODEL as string) || 'gemini-2.5-flash-image'
+            const m = (process.env.WHATAI_IMAGE_MODEL as string) || '';
+            return (m === 'nano-banana' || m === 'nano-banana-2') ? m : 'nano-banana';
         }
     });
     const [imageSize, setImageSize] = useState<'1K' | '2K' | '4K'>(() => {
@@ -149,10 +165,10 @@ const App: React.FC = () => {
     useEffect(() => {
         const onStorage = (e: StorageEvent) => {
             if (apiProvider === 'Grsai' && e.key === 'GRSAI_IMAGE_MODEL') {
-                setImageModel(e.newValue || 'nano-banana');
+                setImageModel(normalizeImageModelForProvider('Grsai', e.newValue || 'nano-banana'));
             }
             if (apiProvider === 'WHATAI' && e.key === 'WHATAI_IMAGE_MODEL') {
-                setImageModel(e.newValue || 'gemini-2.5-flash-image');
+                setImageModel(normalizeImageModelForProvider('WHATAI', e.newValue || 'nano-banana'));
             }
             if (e.key === 'API_PROVIDER') {
                 setApiProvider(((e.newValue || 'WHATAI') as 'WHATAI' | 'Grsai'))
@@ -329,7 +345,7 @@ const App: React.FC = () => {
                 onRenameBoard={handleRenameBoard}
                 onDuplicateBoard={handleDuplicateBoard}
                 onDeleteBoard={handleDeleteBoard}
-                generateBoardThumbnail={(els) => generateBoardThumbnail(els, activeBoard.canvasBackgroundColor)}
+                generateBoardThumbnail={(els) => generateBoardThumbnail(els, canvasBackgroundColor)}
             />
             <CanvasSettings
                 isOpen={isSettingsPanelOpen}
@@ -420,7 +436,7 @@ const App: React.FC = () => {
                     handlePropertyChange={handlePropertyChange}
                     cursor={cursor}
                     handleStopEditing={handleStopEditing}
-                    canvasBackgroundColor={canvasBackgroundColor || 'var(--bg-page)'}
+                    canvasBackgroundColor={canvasBackgroundColor}
                 />
                 
                 <ContextMenuOverlay

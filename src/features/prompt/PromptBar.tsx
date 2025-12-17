@@ -227,15 +227,12 @@ export const PromptBar: React.FC<PromptBarProps> = ({
 
     const MODELS = apiProvider === 'Grsai'
         ? [
-            { id: 'nano-banana', label: 'nano-banana', short: 'Nano' },
-            { id: 'nano-banana-fast', label: 'nano-banana-fast', short: 'Fast' },
-            { id: 'nano-banana-pro', label: 'nano-banana-pro', short: 'Pro' },
+            { id: 'nano-banana', label: 'Standard_B', short: 'Std_B' },
+            { id: 'nano-banana-pro', label: 'Professional_B', short: 'Pro_B' },
           ]
         : [
-            { id: 'gemini-2.5-flash-image', label: 'gemini-2.5-flash', short: 'Flash' },
-            { id: 'gemini-3-pro-image-preview', label: 'gemini-3-pro', short: 'Pro 3' },
-            { id: 'nano-banana', label: 'nano-banana', short: 'Nano' },
-            { id: 'nano-banana-2', label: 'nano-banana-2', short: 'NB2' },
+            { id: 'nano-banana', label: 'Standard_A', short: 'Std_A' },
+            { id: 'nano-banana-2', label: 'Professional_A', short: 'Pro_A' },
           ];
     const activeModelLabel = MODELS.find(m => m.id === activeImageModel)?.label || activeImageModel || 'Model';
     const sizeAllowed = activeImageModel === 'nano-banana-pro' || activeImageModel === 'nano-banana-2';
@@ -316,7 +313,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                     />
                                 </div>
                                 <span className="text-neutral-400 text-sm font-medium truncate select-none">
-                                    Ask Banana...
+                                    Talk to me...
                                 </span>
                             </div>
                         </motion.div>

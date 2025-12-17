@@ -15,7 +15,7 @@ type Deps = {
 export function useBoardManager({ boards, activeBoardId, setBoards, setActiveBoardId, updateActiveBoard, generateId }: Deps) {
   const createNewBoard = useCallback((name: string): Board => {
     const id = generateId();
-    return { id, name, elements: [], history: [[]], historyIndex: 0, panOffset: { x: 0, y: 0 }, zoom: 1, canvasBackgroundColor: '#1f2937', updatedAt: Date.now() };
+    return { id, name, elements: [], history: [[]], historyIndex: 0, panOffset: { x: 0, y: 0 }, zoom: 1, canvasBackgroundColor: '#0F0D13', updatedAt: Date.now() };
   }, [generateId]);
 
   const handleAddBoard = useCallback(() => {

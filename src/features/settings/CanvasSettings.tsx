@@ -57,6 +57,10 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
 }) => {
     void uiTheme; void setUiTheme; void buttonTheme; void setButtonTheme;
 
+    const DEFAULT_CANVAS_BG = '#0F0D13';
+    const isValidHexColor = (v: string) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v);
+    const resolvedCanvasBackgroundColor = isValidHexColor(canvasBackgroundColor) ? canvasBackgroundColor : DEFAULT_CANVAS_BG;
+
 
     const [balanceData, setBalanceData] = React.useState<{ quota: number; used: number } | null>(null);
     const [balanceLoading, setBalanceLoading] = React.useState<boolean>(false);
@@ -125,12 +129,12 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
                                 <div className="flex items-center gap-2 p-0.5 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)]">
                                     <input
                                         type="color"
-                                        value={canvasBackgroundColor && canvasBackgroundColor.startsWith('#') ? canvasBackgroundColor : '#0F0D13'}
+                                        value={resolvedCanvasBackgroundColor}
                                         onChange={(e) => onCanvasBackgroundColorChange(e.target.value)}
                                         className="h-5 w-8 rounded cursor-pointer border-none bg-transparent p-0"
                                     />
                                     <span className="text-[10px] text-[var(--text-secondary)] font-mono flex-1 text-center uppercase">
-                                        {canvasBackgroundColor && canvasBackgroundColor.startsWith('#') ? canvasBackgroundColor : 'DEFAULT'}
+                                        {resolvedCanvasBackgroundColor.toUpperCase()}
                                     </span>
                                 </div>
                             </div>
@@ -161,11 +165,11 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
                             <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)]">
                                 <input
                                     type="color"
-                                    value={canvasBackgroundColor}
+                                    value={resolvedCanvasBackgroundColor}
                                     onChange={(e) => onCanvasBackgroundColorChange(e.target.value)}
                                     className="h-5 w-5 rounded cursor-pointer border-none bg-transparent p-0"
                                 />
-                                <span className="text-xs text-[var(--text-secondary)] font-mono flex-1">{canvasBackgroundColor.toUpperCase()}</span>
+                                <span className="text-xs text-[var(--text-secondary)] font-mono flex-1">{resolvedCanvasBackgroundColor.toUpperCase()}</span>
                             </div>
                         </div>
 

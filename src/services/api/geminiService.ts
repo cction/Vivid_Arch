@@ -6,9 +6,9 @@ const WHATAI_TEXT_MODEL = process.env.WHATAI_TEXT_MODEL || 'gemini-2.0-flash-exp
 function getWhataiImageModel(): string {
   try {
     const v = typeof window !== 'undefined' ? (localStorage.getItem('WHATAI_IMAGE_MODEL') || undefined) : undefined;
-    return v || (process.env.WHATAI_IMAGE_MODEL as string) || 'gemini-2.5-flash-image';
+    return v || (process.env.WHATAI_IMAGE_MODEL as string) || 'nano-banana';
   } catch {
-    return (process.env.WHATAI_IMAGE_MODEL as string) || 'gemini-2.5-flash-image';
+    return (process.env.WHATAI_IMAGE_MODEL as string) || 'nano-banana';
   }
 }
 const WHATAI_VIDEO_MODEL = process.env.WHATAI_VIDEO_MODEL || 'vidu-1';

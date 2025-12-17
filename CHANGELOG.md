@@ -175,3 +175,14 @@
 - 高频交互（拖拽/绘制/缩放）过程中无明显掉帧；停止操作后 1–3 秒内触发一次保存
 - 新建 ≥6 个图版并分别编辑：刷新后仅恢复最近更新的 5 个图版的最新状态
 - 部署环境禁用 WebCrypto 或 IndexedDB 时：应自动使用 `localStorage` 保存/恢复会话，不再出现 `digest` 相关报错
+
+## v1.2.0 (2025-12-18)
+
+- refactor(models): 收敛代理 A/B 可选模型，每个代理仅保留 2 个模型选项
+- ui(promptbar): PromptBar 模型展示名改为 `Standard_A/Professional_A` 与 `Standard_B/Professional_B`（请求仍使用原模型 id）
+- compat(storage): 兼容旧 `localStorage` 模型值，自动回退归一化，避免升级后模型不可选导致报错
+- docs/release: 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.2.0`
+
+验证说明：
+- 运行 `npm run lint`、`npx tsc --noEmit`、`npm run build` 均通过
+- 手动：在 PromptBar 切换代理/模型后发起生成，确认“展示名”与“请求模型 id”对应关系正确

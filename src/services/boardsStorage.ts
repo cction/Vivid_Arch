@@ -354,6 +354,30 @@ export async function saveLastSession(payload: { boards: Board[]; activeBoardId:
 let lastSessionTimer: number | null = null
 let lastSessionPending: { boards: Board[]; activeBoardId: string } | null = null
 let lastSessionIdleHandle: number | null = null
+let lastSessionIdlePending: { boards: Board[]; activeBoardId: string } | null = null
+
+function scheduleLastSessionSaveInIdle(payload: { boards: Board[]; activeBoardId: string }) {
+  const ric = (typeof window !== 'undefined' && 'requestIdleCallback' in window)
+    ? (window.requestIdleCallback as unknown as (cb: () => void, opts?: { timeout?: number }) => number)
+    : null
+
+  if (!ric) {
+    void saveLastSession(payload)
+    return
+  }
+
+  lastSessionIdlePending = payload
+  if (lastSessionIdleHandle != null) return
+
+  lastSessionIdleHandle = ric(async () => {
+    lastSessionIdleHandle = null
+    const p = lastSessionIdlePending
+    lastSessionIdlePending = null
+    if (!p) return
+    await saveLastSession(p)
+  }, { timeout: 2000 })
+}
+
 export function touchLastSessionPending(payload: { boards: Board[]; activeBoardId: string }) {
   lastSessionPending = payload
   saveLastSessionDebounced(payload)
@@ -363,24 +387,13 @@ export function saveLastSessionDebounced(payload: { boards: Board[]; activeBoard
   if (lastSessionTimer != null) {
     clearTimeout(lastSessionTimer)
   }
-  lastSessionTimer = setTimeout(async () => {
+  lastSessionTimer = setTimeout(() => {
     const p = lastSessionPending
     lastSessionPending = null
     lastSessionTimer = null
     if (!p) return
-    await saveLastSession(p)
+    scheduleLastSessionSaveInIdle(p)
   }, delay) as unknown as number
-
-  const ric = (typeof window !== 'undefined' && 'requestIdleCallback' in window) ? (window.requestIdleCallback as unknown as (cb: () => void, opts?: { timeout?: number }) => number) : null
-  if (ric && lastSessionIdleHandle == null) {
-    lastSessionIdleHandle = ric(async () => {
-      lastSessionIdleHandle = null
-      const p = lastSessionPending
-      lastSessionPending = null
-      if (!p) return
-      await saveLastSession(p)
-    }, { timeout: 2000 })
-  }
 }
 export async function flushLastSessionSave() {
   if (lastSessionTimer != null) {
@@ -392,10 +405,11 @@ export async function flushLastSessionSave() {
     cic(lastSessionIdleHandle)
     lastSessionIdleHandle = null
   }
-  if (lastSessionPending) {
-    const p = lastSessionPending
-    lastSessionPending = null
-    await saveLastSession(p)
+  const pending = lastSessionPending ?? lastSessionIdlePending
+  lastSessionPending = null
+  lastSessionIdlePending = null
+  if (pending) {
+    await saveLastSession(pending)
   }
 }
 export async function loadLastSession(): Promise<{ boards: Board[]; activeBoardId: string; timestamp: number } | null> {
