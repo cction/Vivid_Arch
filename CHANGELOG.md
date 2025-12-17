@@ -161,3 +161,17 @@
 
 验证说明：
 - 单图/多图拖拽到画布与 `foreignObject` 均导入，不会触发浏览器直接打开；URL（含无扩展名）导入识别正确
+
+## v1.1.9 (2025-12-17)
+
+- feat(session): 取消“历史图版/历史记录”设置，仅持久化最近更新的 5 个图版的最新状态
+- perf(session-save): 保存流程改为“防抖 + 空闲落盘”，降低绘制/拖拽/缩放时的卡顿风险
+- fix(storage): IndexedDB 不可用或失败时自动降级到 `localStorage`，避免部署环境会话无法保存
+- fix(storage): WebCrypto 不可用时哈希计算自动降级，修复 `crypto.subtle.digest` 为 `undefined` 导致的保存异常
+- cleanup(history): 移除历史图版 UI 与存储残留（含 IndexedDB `history` store 清理）
+- docs/release: 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.1.9`
+
+验证说明：
+- 高频交互（拖拽/绘制/缩放）过程中无明显掉帧；停止操作后 1–3 秒内触发一次保存
+- 新建 ≥6 个图版并分别编辑：刷新后仅恢复最近更新的 5 个图版的最新状态
+- 部署环境禁用 WebCrypto 或 IndexedDB 时：应自动使用 `localStorage` 保存/恢复会话，不再出现 `digest` 相关报错

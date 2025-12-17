@@ -107,15 +107,5 @@ export interface Board {
   panOffset: Point;
   zoom: number;
   canvasBackgroundColor: string;
-}
-
-export interface HistoryBoardSnapshot {
-  id: string;
-  name: string;
-  elements: Element[];
-  panOffset: Point;
-  zoom: number;
-  canvasBackgroundColor: string;
-  savedAt: number;
-  thumbnail?: string;
+  updatedAt?: number;
 }

@@ -9,7 +9,8 @@ export function useBoardActions(
 ) {
   const updateActiveBoard = useCallback((updater: (board: Board) => Board) => {
     setBoards(prevBoards => {
-      const next: Board[] = prevBoards.map(board => (board.id === activeBoardId ? updater(board) : board));
+      const now = Date.now();
+      const next: Board[] = prevBoards.map(board => (board.id === activeBoardId ? { ...updater(board), updatedAt: now } : board));
       touchLastSessionPending({ boards: next, activeBoardId });
       return next;
     });
@@ -17,7 +18,8 @@ export function useBoardActions(
 
   const updateActiveBoardSilent = useCallback((updater: (board: Board) => Board) => {
     setBoards(prevBoards => {
-      const next: Board[] = prevBoards.map(board => (board.id === activeBoardId ? updater(board) : board));
+      const now = Date.now();
+      const next: Board[] = prevBoards.map(board => (board.id === activeBoardId ? { ...updater(board), updatedAt: now } : board));
       touchLastSessionPending({ boards: next, activeBoardId });
       return next;
     });

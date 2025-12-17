@@ -1,6 +1,13 @@
-# BananaPod｜图像生成与编辑工作台（v1.1.8）
+# BananaPod｜图像生成与编辑工作台（v1.1.9）
 
 轻量、可扩展的图像生成与编辑工作台，采用 PodUI 主题。统一第三方 API 为 OpenAI 风格接口（基于 `whatai.cc`），支持图层系统、裁剪与合并、双语界面、iPad/Apple Pencil 场景。
+
+## 核心更新（v1.1.9）
+- 变更：取消“历史图版/历史记录”设置，仅持久化最近更新的 5 个图版的最新状态
+- 性能：保存改为“防抖 + 空闲落盘”，降低绘制/拖拽/缩放时的卡顿风险
+- 兼容：部署环境 IndexedDB 不可用时自动降级到 `localStorage`，避免会话无法保存
+- 修复：WebCrypto 不可用时哈希计算降级，避免 `crypto.subtle.digest` 为 `undefined` 导致保存失败
+- 验证：通过 `npm run lint`、`npx tsc --noEmit`、`npm run build`
 
 ## 核心更新（v1.1.8）
 - 修复：单图拖入画布可能直接在浏览器打开的问题；在捕获阶段拦截 `dragover/drop` 并统一阻止默认行为，确保导入流程
@@ -93,13 +100,13 @@ BananaPod/
 - 应用内密钥保存在 `localStorage`，不会在日志中打印；仅在请求头附加
 
 ## 版本与发布
-- 当前版本：`1.1.8`
+- 当前版本：`1.1.9`
 - 关键变更：
-  - 修复单图拖入画布可能直接在浏览器打开的问题（捕获阶段拦截 `dragover/drop`）
-  - URL 导入兼容无扩展名链接（基于 `Content-Type: image/*` 自动识别）
-  - 禁用拖拽预览占位符渲染，保留导入阶段初始占位符
-  - 增加拖拽与导入路径的调试日志，便于排查问题
-  - 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.1.8`
+  - 取消“历史图版/历史记录”，仅保存最近更新的 5 个图版的最新状态
+  - 保存流程改为防抖+空闲落盘，降低主线程阻塞
+  - IndexedDB 不可用时降级 `localStorage` 保存会话
+  - WebCrypto 不可用时哈希计算降级，避免保存报错
+  - 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.1.9`
 
 ## 致谢
 - 模型：`nano-banana` 系列、`gemini-3-pro-image-preview`

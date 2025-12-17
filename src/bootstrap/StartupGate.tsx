@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { loadLastSession, pushHistoryBoard, pruneHistory, flushLastSessionSave } from '../services/boardsStorage'
+import { loadLastSession, flushLastSessionSave } from '../services/boardsStorage'
 import { SessionRestoreDialog } from '../components/SessionRestoreDialog'
 
 import type { Board } from '@/types'
@@ -27,15 +27,11 @@ export const StartupGate: React.FC<{ children: React.ReactNode }> = ({ children 
     if (last) {
       window.__BANANAPOD_INITIAL_BOARDS__ = last.boards
       window.__BANANAPOD_INITIAL_ACTIVE_BOARD_ID__ = last.activeBoardId
-      Promise.all(last.boards.map((b: Board) => pushHistoryBoard(b))).then(() => pruneHistory(5)).catch(() => {})
     }
     setDecision('continue')
   }
 
   const handleNew = () => {
-    if (last) {
-      Promise.all(last.boards.map((b: Board) => pushHistoryBoard(b))).then(() => pruneHistory(5)).catch(() => {})
-    }
     setDecision('new')
   }
 

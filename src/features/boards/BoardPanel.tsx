@@ -1,8 +1,7 @@
 import React from 'react';
-import type { Board, HistoryBoardSnapshot } from '@/types';
+import type { Board } from '@/types';
 import { IconButton } from '../../ui';
 import { BoardGrid } from './components/BoardGrid';
-import { HistoryList } from './components/HistoryList';
 
 interface BoardPanelProps {
     isOpen: boolean;
@@ -15,14 +14,13 @@ interface BoardPanelProps {
     onDuplicateBoard: (id: string) => void;
     onDeleteBoard: (id: string) => void;
     generateBoardThumbnail: (elements: Board['elements']) => string;
-    onImportHistoryBoard?: (snapshot: HistoryBoardSnapshot) => void;
 }
 
 
 
 export const BoardPanel: React.FC<BoardPanelProps> = ({ 
     isOpen, onClose, boards, activeBoardId, onSwitchBoard, onAddBoard, 
-    onRenameBoard, onDuplicateBoard, onDeleteBoard, onImportHistoryBoard, generateBoardThumbnail 
+    onRenameBoard, onDuplicateBoard, onDeleteBoard, generateBoardThumbnail 
 }) => {
     if (!isOpen) return null;
 
@@ -51,12 +49,6 @@ export const BoardPanel: React.FC<BoardPanelProps> = ({
                     onDuplicateBoard={onDuplicateBoard}
                     onDeleteBoard={onDeleteBoard}
                     generateBoardThumbnail={generateBoardThumbnail}
-                />
-                <div className="pod-separator" />
-                <HistoryList
-                    isOpen={isOpen}
-                    generateBoardThumbnail={generateBoardThumbnail}
-                    onImportHistoryBoard={onImportHistoryBoard}
                 />
             </div>
         </div>

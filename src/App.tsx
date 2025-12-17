@@ -53,6 +53,7 @@ const createNewBoard = (name: string): Board => {
         panOffset: { x: 0, y: 0 },
         zoom: 1,
         canvasBackgroundColor: '#0F0D13', // matches var(--color-base-dark)
+        updatedAt: Date.now(),
         // Note: Canvas context requires valid hex/color string, cannot use CSS var directly without resolution.
     };
 };
@@ -311,7 +312,7 @@ const App: React.FC = () => {
     const singleSelectedElement = selectedElementIds.length === 1 ? elements.find(el => el.id === selectedElementIds[0]) : null;
     
 
-    const { handleAddBoard, handleDuplicateBoard, handleDeleteBoard, handleRenameBoard, handleSwitchBoard, handleCanvasBackgroundColorChange, generateBoardThumbnail, handleImportHistoryBoard } = useBoardManager({ boards, activeBoardId, activeBoard, setBoards, setActiveBoardId, updateActiveBoard, generateId });
+    const { handleAddBoard, handleDuplicateBoard, handleDeleteBoard, handleRenameBoard, handleSwitchBoard, handleCanvasBackgroundColorChange, generateBoardThumbnail } = useBoardManager({ boards, activeBoardId, setBoards, setActiveBoardId, updateActiveBoard, generateId });
 
 
     return (
@@ -329,7 +330,6 @@ const App: React.FC = () => {
                 onDuplicateBoard={handleDuplicateBoard}
                 onDeleteBoard={handleDeleteBoard}
                 generateBoardThumbnail={(els) => generateBoardThumbnail(els, activeBoard.canvasBackgroundColor)}
-                onImportHistoryBoard={(snapshot) => { handleImportHistoryBoard(snapshot); setIsBoardPanelOpen(false); }}
             />
             <CanvasSettings
                 isOpen={isSettingsPanelOpen}

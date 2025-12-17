@@ -1,22 +1,21 @@
 import { useCallback } from 'react';
 import { touchLastSessionPending } from '@/services/boardsStorage';
-import type { Board, Element, HistoryBoardSnapshot } from '@/types';
+import type { Board, Element } from '@/types';
 import { getElementBounds } from '@/utils/canvas';
 
 type Deps = {
   boards: Board[];
   activeBoardId: string;
-  activeBoard: Board;
   setBoards: (updater: (prev: Board[]) => Board[]) => void;
   setActiveBoardId: (id: string) => void;
   updateActiveBoard: (updater: (board: Board) => Board) => void;
   generateId: () => string;
 };
 
-export function useBoardManager({ boards, activeBoardId, activeBoard, setBoards, setActiveBoardId, updateActiveBoard, generateId }: Deps) {
+export function useBoardManager({ boards, activeBoardId, setBoards, setActiveBoardId, updateActiveBoard, generateId }: Deps) {
   const createNewBoard = useCallback((name: string): Board => {
     const id = generateId();
-    return { id, name, elements: [], history: [[]], historyIndex: 0, panOffset: { x: 0, y: 0 }, zoom: 1, canvasBackgroundColor: '#1f2937' };
+    return { id, name, elements: [], history: [[]], historyIndex: 0, panOffset: { x: 0, y: 0 }, zoom: 1, canvasBackgroundColor: '#1f2937', updatedAt: Date.now() };
   }, [generateId]);
 
   const handleAddBoard = useCallback(() => {
@@ -28,7 +27,7 @@ export function useBoardManager({ boards, activeBoardId, activeBoard, setBoards,
   const handleDuplicateBoard = useCallback((boardId: string) => {
     const boardToDuplicate = boards.find(b => b.id === boardId);
     if (!boardToDuplicate) return;
-    const newBoard: Board = { ...boardToDuplicate, id: generateId(), name: `${boardToDuplicate.name} Copy`, history: [boardToDuplicate.elements], historyIndex: 0 };
+    const newBoard: Board = { ...boardToDuplicate, id: generateId(), name: `${boardToDuplicate.name} Copy`, history: [boardToDuplicate.elements], historyIndex: 0, updatedAt: Date.now() };
     setBoards(prev => { const next = [...prev, newBoard]; touchLastSessionPending({ boards: next, activeBoardId: newBoard.id }); return next; });
     setActiveBoardId(newBoard.id);
   }, [boards, generateId, setBoards, setActiveBoardId]);
@@ -45,7 +44,8 @@ export function useBoardManager({ boards, activeBoardId, activeBoard, setBoards,
   }, [activeBoardId, setBoards, setActiveBoardId]);
 
   const handleRenameBoard = useCallback((boardId: string, name: string) => {
-    setBoards(prev => { const next = prev.map(b => (b.id === boardId ? { ...b, name } : b)); touchLastSessionPending({ boards: next, activeBoardId }); return next; });
+    const now = Date.now();
+    setBoards(prev => { const next = prev.map(b => (b.id === boardId ? { ...b, name, updatedAt: now } : b)); touchLastSessionPending({ boards: next, activeBoardId }); return next; });
   }, [activeBoardId, setBoards]);
 
   const handleSwitchBoard = useCallback((id: string) => {
@@ -76,14 +76,5 @@ export function useBoardManager({ boards, activeBoardId, activeBoard, setBoards,
     return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(fullSvg)))}`;
   }, []);
 
-  const handleImportHistoryBoard = useCallback((snapshot: HistoryBoardSnapshot) => {
-    const pad = (x: number) => String(x).padStart(2, '0');
-    const d = new Date(snapshot.savedAt);
-    const code = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-    const newBoard: Board = { id: generateId(), name: code, elements: snapshot.elements, history: [snapshot.elements], historyIndex: 0, panOffset: snapshot.panOffset || { x: 0, y: 0 }, zoom: snapshot.zoom || 1, canvasBackgroundColor: snapshot.canvasBackgroundColor || activeBoard.canvasBackgroundColor };
-    setBoards(prev => { const next = [...prev, newBoard]; touchLastSessionPending({ boards: next, activeBoardId: newBoard.id }); return next; });
-    setActiveBoardId(newBoard.id);
-  }, [activeBoard.canvasBackgroundColor, generateId, setBoards, setActiveBoardId]);
-
-  return { handleAddBoard, handleDuplicateBoard, handleDeleteBoard, handleRenameBoard, handleSwitchBoard, handleCanvasBackgroundColorChange, generateBoardThumbnail, handleImportHistoryBoard };
+  return { handleAddBoard, handleDuplicateBoard, handleDeleteBoard, handleRenameBoard, handleSwitchBoard, handleCanvasBackgroundColorChange, generateBoardThumbnail };
 }

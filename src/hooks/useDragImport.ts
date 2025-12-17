@@ -253,7 +253,7 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
     e.stopPropagation()
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
     setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))
-  }, [svgRef, getCanvasPoint, setElements, elementsRef, generateId])
+  }, [setElements])
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
