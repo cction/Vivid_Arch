@@ -31,6 +31,8 @@ import { useElementOps } from '@/hooks/useElementOps';
 import { useCanvasCoords } from '@/hooks/useCanvasCoords';
 import { PodUIPreview } from '@/components/PodUIPreview';
 import { PodButton } from '@/components/podui';
+import { getElementBounds } from '@/utils/canvas';
+import { BottomBar } from '@/features/bottombar/BottomBar';
 
 const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -100,7 +102,7 @@ const App: React.FC = () => {
     const [showUIPreview, setShowUIPreview] = useState(false);
 
     const { language, setLanguage, t } = useI18n('ZH');
-    const { apiKey, setApiKey, grsaiApiKey, setGrsaiApiKey, systemToken, setSystemToken, userId, setUserId } = useCredentials();
+    const { apiKey, setApiKey, grsaiApiKey, setGrsaiApiKey } = useCredentials();
 
     const [apiProvider, setApiProvider] = useState<'WHATAI' | 'Grsai'>(() => {
         try { return (localStorage.getItem('API_PROVIDER') as 'WHATAI' | 'Grsai') || 'WHATAI' } catch { return 'WHATAI' }
@@ -110,7 +112,7 @@ const App: React.FC = () => {
     }, [apiProvider]);
 
     const getAllowedImageModels = (provider: 'WHATAI' | 'Grsai') => {
-        return provider === 'Grsai' ? ['nano-banana', 'nano-banana-pro'] : ['nano-banana', 'nano-banana-2'];
+        return provider === 'Grsai' ? ['nano-banana-fast', 'nano-banana-pro'] : ['nano-banana', 'nano-banana-2'];
     };
     const normalizeImageModelForProvider = (provider: 'WHATAI' | 'Grsai', model: string | null | undefined) => {
         const allowed = getAllowedImageModels(provider);
@@ -144,7 +146,9 @@ const App: React.FC = () => {
             const provider = (localStorage.getItem('API_PROVIDER') as 'WHATAI' | 'Grsai') || 'WHATAI'
             if (provider === 'Grsai') {
                 const m = localStorage.getItem('GRSAI_IMAGE_MODEL');
-                return (m === 'nano-banana' || m === 'nano-banana-pro') ? m : 'nano-banana';
+                if (m === 'nano-banana-fast' || m === 'nano-banana-pro') return m;
+                if (m === 'nano-banana') return 'nano-banana-fast';
+                return 'nano-banana-fast';
             }
             const m = localStorage.getItem('WHATAI_IMAGE_MODEL') || (process.env.WHATAI_IMAGE_MODEL as string);
             return (m === 'nano-banana' || m === 'nano-banana-2') ? m : 'nano-banana';
@@ -165,7 +169,7 @@ const App: React.FC = () => {
     useEffect(() => {
         const onStorage = (e: StorageEvent) => {
             if (apiProvider === 'Grsai' && e.key === 'GRSAI_IMAGE_MODEL') {
-                setImageModel(normalizeImageModelForProvider('Grsai', e.newValue || 'nano-banana'));
+                setImageModel(normalizeImageModelForProvider('Grsai', e.newValue || 'nano-banana-fast'));
             }
             if (apiProvider === 'WHATAI' && e.key === 'WHATAI_IMAGE_MODEL') {
                 setImageModel(normalizeImageModelForProvider('WHATAI', e.newValue || 'nano-banana'));
@@ -330,6 +334,59 @@ const App: React.FC = () => {
 
     const { handleAddBoard, handleDuplicateBoard, handleDeleteBoard, handleRenameBoard, handleSwitchBoard, handleCanvasBackgroundColorChange, generateBoardThumbnail } = useBoardManager({ boards, activeBoardId, setBoards, setActiveBoardId, updateActiveBoard, generateId });
 
+    const isElementVisible = useCallback((element: Element, allElements: Element[]): boolean => {
+        if (element.isVisible === false) return false;
+        if (element.parentId) {
+            const parent = allElements.find(el => el.id === element.parentId);
+            if (parent) return isElementVisible(parent, allElements);
+        }
+        return true;
+    }, []);
+
+    const handleFitToWindow = useCallback(() => {
+        const svgEl = svgRef.current;
+        const currentElements = elementsRef.current;
+        if (!svgEl) return;
+        const rect = svgEl.getBoundingClientRect();
+        const viewportWidth = rect.width;
+        const viewportHeight = rect.height;
+        if (!currentElements || currentElements.length === 0 || viewportWidth <= 0 || viewportHeight <= 0) {
+            updateActiveBoardSilent(b => ({ ...b, zoom: 1, panOffset: { x: 0, y: 0 } }));
+            return;
+        }
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        currentElements.forEach(el => {
+            if (!isElementVisible(el, currentElements)) return;
+            const bounds = getElementBounds(el, currentElements);
+            minX = Math.min(minX, bounds.x);
+            minY = Math.min(minY, bounds.y);
+            maxX = Math.max(maxX, bounds.x + bounds.width);
+            maxY = Math.max(maxY, bounds.y + bounds.height);
+        });
+        if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+            updateActiveBoardSilent(b => ({ ...b, zoom: 1, panOffset: { x: 0, y: 0 } }));
+            return;
+        }
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+        if (contentWidth <= 0 || contentHeight <= 0) {
+            updateActiveBoardSilent(b => ({ ...b, zoom: 1, panOffset: { x: 0, y: 0 } }));
+            return;
+        }
+        const scaleX = viewportWidth / contentWidth;
+        const scaleY = viewportHeight / contentHeight;
+        const paddingFactor = 0.9;
+        const rawZoom = Math.min(scaleX, scaleY) * paddingFactor;
+        const clampedZoom = Math.max(0.1, Math.min(rawZoom, 10));
+        const contentCenterX = minX + contentWidth / 2;
+        const contentCenterY = minY + contentHeight / 2;
+        const panX = viewportWidth / 2 - clampedZoom * contentCenterX;
+        const panY = viewportHeight / 2 - clampedZoom * contentCenterY;
+        updateActiveBoardSilent(b => ({ ...b, zoom: clampedZoom, panOffset: { x: panX, y: panY } }));
+    }, [elementsRef, svgRef, updateActiveBoardSilent, isElementVisible]);
 
     return (
         <div className="w-screen h-screen flex flex-col font-sans podui-theme" onDragOverCapture={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }} onDropCapture={(e) => { e.preventDefault(); }} onDragEnter={handleDragOver} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
@@ -354,10 +411,6 @@ const App: React.FC = () => {
                 onCanvasBackgroundColorChange={handleCanvasBackgroundColorChange}
                 language={language}
                 setLanguage={setLanguage}
-                uiTheme={uiTheme}
-                setUiTheme={setUiTheme}
-                buttonTheme={buttonTheme}
-                setButtonTheme={setButtonTheme}
                 wheelAction={wheelAction}
                 setWheelAction={setWheelAction}
                 t={t}
@@ -367,10 +420,6 @@ const App: React.FC = () => {
                 setApiProvider={setApiProvider}
                 grsaiApiKey={grsaiApiKey}
                 setGrsaiApiKey={setGrsaiApiKey}
-                systemToken={systemToken}
-                setSystemToken={setSystemToken}
-                userId={userId}
-                setUserId={setUserId}
             />
             <Toolbar
                 t={t}
@@ -477,6 +526,12 @@ const App: React.FC = () => {
             />
             
             {showUIPreview && <PodUIPreview onClose={() => setShowUIPreview(false)} />}
+            
+            <BottomBar 
+                t={t}
+                onFitToWindow={handleFitToWindow}
+            />
+
             <div className="fixed bottom-4 left-4 z-50">
                 <PodButton size="xs" variant="secondary" onClick={() => setShowUIPreview(true)}>
                     UI Preview

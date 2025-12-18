@@ -227,7 +227,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
 
     const MODELS = apiProvider === 'Grsai'
         ? [
-            { id: 'nano-banana', label: 'Standard_B', short: 'Std_B' },
+            { id: 'nano-banana-fast', label: 'Standard_B', short: 'Std_B' },
             { id: 'nano-banana-pro', label: 'Professional_B', short: 'Pro_B' },
           ]
         : [

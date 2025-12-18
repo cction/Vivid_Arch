@@ -1,6 +1,5 @@
 import React from 'react';
 import { Panel, IconButton, Button } from '@/ui';
-import { fetchUserSelf } from '@/services/httpClient';
 import type { WheelAction } from '@/types';
 
 interface CanvasSettingsProps {
@@ -10,10 +9,6 @@ interface CanvasSettingsProps {
     onCanvasBackgroundColorChange: (color: string) => void;
     language: 'en' | 'ZH';
     setLanguage: (lang: 'en' | 'ZH') => void;
-    uiTheme: { color: string; opacity: number };
-    setUiTheme: (theme: { color: string; opacity: number }) => void;
-    buttonTheme: { color: string; opacity: number };
-    setButtonTheme: (theme: { color: string; opacity: number }) => void;
     wheelAction: WheelAction;
     setWheelAction: (action: WheelAction) => void;
     t: (key: string) => string;
@@ -23,10 +18,6 @@ interface CanvasSettingsProps {
     setApiProvider: (p: 'WHATAI' | 'Grsai') => void;
     grsaiApiKey: string;
     setGrsaiApiKey: (key: string) => void;
-    systemToken: string;
-    setSystemToken: (key: string) => void;
-    userId: string;
-    setUserId: (id: string) => void;
 }
 
 
@@ -37,10 +28,6 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
     onCanvasBackgroundColorChange,
     language,
     setLanguage,
-    uiTheme,
-    setUiTheme,
-    buttonTheme,
-    setButtonTheme,
     wheelAction,
     setWheelAction,
     t,
@@ -50,40 +37,10 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
     setApiProvider,
     grsaiApiKey,
     setGrsaiApiKey,
-    systemToken,
-    setSystemToken,
-    userId,
-    setUserId
 }) => {
-    void uiTheme; void setUiTheme; void buttonTheme; void setButtonTheme;
-
     const DEFAULT_CANVAS_BG = '#0F0D13';
     const isValidHexColor = (v: string) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v);
     const resolvedCanvasBackgroundColor = isValidHexColor(canvasBackgroundColor) ? canvasBackgroundColor : DEFAULT_CANVAS_BG;
-
-
-    const [balanceData, setBalanceData] = React.useState<{ quota: number; used: number } | null>(null);
-    const [balanceLoading, setBalanceLoading] = React.useState<boolean>(false);
-
-    const handleCheckBalance = async () => {
-        setBalanceLoading(true);
-        setBalanceData(null);
-        try {
-            if (!userId || !systemToken) {
-                setBalanceData(null);
-                setBalanceLoading(false);
-                return;
-}
-            const result = await fetchUserSelf(userId, systemToken);
-            const quota = result?.data?.quota ?? 0;
-            const used = result?.data?.used_quota ?? 0;
-            setBalanceData({ quota, used });
-        } catch {
-            setBalanceData(null);
-        } finally {
-            setBalanceLoading(false);
-        }
-    };
 
     if (!isOpen) return null;
 
@@ -157,30 +114,11 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
                             </div>
                         </div>
 
-                        
-
-                        {/* Appearance */}
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-[var(--text-heading)]">{t('settings.backgroundColor')}</label>
-                            <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)]">
-                                <input
-                                    type="color"
-                                    value={resolvedCanvasBackgroundColor}
-                                    onChange={(e) => onCanvasBackgroundColorChange(e.target.value)}
-                                    className="h-5 w-5 rounded cursor-pointer border-none bg-transparent p-0"
-                                />
-                                <span className="text-xs text-[var(--text-secondary)] font-mono flex-1">{resolvedCanvasBackgroundColor.toUpperCase()}</span>
-                            </div>
-                        </div>
-
-
-
                         <div className="pod-separator"></div>
 
                         {/* API & Account */}
                         <div className="space-y-3">
                             <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-[var(--text-heading)]">{t('settings.apiProvider')}</label>
                                 <div className="flex p-0.5 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)]">
                                     <button
                                         onClick={() => setApiProvider('WHATAI')}
@@ -206,64 +144,12 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
                                             const v = (e.target as HTMLInputElement).value;
                                             if (apiProvider === 'Grsai') setGrsaiApiKey(v); else setApiKey(v);
                                         }}
-                                        placeholder={apiProvider === 'Grsai' ? (language === 'ZH' ? '代理B API Key' : 'Proxy B API Key') : (language === 'ZH' ? '代理A API Key' : 'Proxy A API Key')}
+                                        placeholder={apiProvider === 'Grsai' ? (language === 'ZH' ? '代理B 令牌' : 'Proxy B Token') : (language === 'ZH' ? '代理A 令牌' : 'Proxy A Token')}
                                         className="pod-input pod-input-sm flex-1 text-xs"
                                     />
                                     <Button onClick={onClose} size="sm" className="h-8 px-3 text-xs whitespace-nowrap">{t('settings.apiKeySave')}</Button>
                                 </div>
                             </div>
-
-                            <details className="group">
-                                <summary className="text-xs text-[var(--text-secondary)] cursor-pointer hover:text-[var(--text-primary)] select-none flex items-center gap-1 outline-none">
-                                    <svg className="w-3 h-3 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 18l6-6-6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                                    {language === 'ZH' ? '高级设置 (Token / ID)' : 'Advanced (Token / ID)'}
-                                </summary>
-                                <div className="mt-3 space-y-3 pl-2 border-l-2 border-[var(--border-color)]">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] text-[var(--text-secondary)]">{t('settings.systemToken')}</label>
-                                        <input
-                                            type="password"
-                                            value={systemToken}
-                                            onChange={(e) => setSystemToken((e.target as HTMLInputElement).value)}
-                                            placeholder={language === 'ZH' ? '系统 Token（可选）' : 'System Token (optional)'}
-                                            className="pod-input pod-input-sm w-full text-xs"
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] text-[var(--text-secondary)]">{t('settings.userId')}</label>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                value={userId}
-                                                onChange={(e) => setUserId((e.target as HTMLInputElement).value)}
-                                                placeholder={language === 'ZH' ? '用户 ID' : 'User ID'}
-                                                className="pod-input pod-input-sm flex-1 text-xs"
-                                            />
-                                            <Button
-                                                size="sm"
-                                                variant="secondary"
-                                                onClick={handleCheckBalance}
-                                                disabled={balanceLoading}
-                                                className="h-8 px-2 text-xs min-w-[60px]"
-                                            >
-                                                {balanceLoading ? '...' : (language === 'ZH' ? '查余额' : 'Check')}
-                                            </Button>
-                                        </div>
-                                        {balanceData && (
-                                            <div className="mt-1 flex flex-col gap-1 text-[10px] text-[var(--text-secondary)] bg-[var(--bg-input)] p-2 rounded">
-                                                <div className="flex justify-between">
-                                                    <span>{t('settings.siteBalancePrefix')}</span>
-                                                    <span className="font-mono text-[var(--text-primary)]">{new Intl.NumberFormat(language === 'ZH' ? 'zh-CN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balanceData.quota / 500000)}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span>{t('settings.siteUsedPrefix')}</span>
-                                                    <span className="font-mono text-[var(--text-primary)]">{new Intl.NumberFormat(language === 'ZH' ? 'zh-CN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(balanceData.used / 500000)}</span>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </details>
                         </div>
                     </div>
                 </div>

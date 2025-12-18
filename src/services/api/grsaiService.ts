@@ -192,7 +192,7 @@ async function pollDrawResult(id: string, responseFormat: 'url' | 'b64_json', us
 
 export async function generateImageFromText(
   prompt: string,
-  model?: 'nano-banana' | 'nano-banana-pro',
+  model?: 'nano-banana' | 'nano-banana-fast' | 'nano-banana-pro',
   opts?: { aspectRatio?: string; imageSize?: '1K' | '2K' | '4K'; responseFormat?: 'url' | 'b64_json' }
 ): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }>
 {
@@ -200,7 +200,7 @@ export async function generateImageFromText(
     return { newImageBase64: null, newImageMimeType: null, textResponse: 'grsai API 未配置或未启用' }
   }
   try {
-    const usedModel = model || 'nano-banana'
+    const usedModel = model || 'nano-banana-fast'
     const body = {
       model: usedModel,
       prompt,
@@ -233,14 +233,14 @@ type ImageInput = { href: string; mimeType: string }
 export async function editImage(
   prompt: string,
   images: ImageInput[],
-  opts?: { aspectRatio?: string; imageSize?: '1K' | '2K' | '4K'; responseFormat?: 'url' | 'b64_json'; model?: 'nano-banana' | 'nano-banana-pro' }
+  opts?: { aspectRatio?: string; imageSize?: '1K' | '2K' | '4K'; responseFormat?: 'url' | 'b64_json'; model?: 'nano-banana' | 'nano-banana-fast' | 'nano-banana-pro' }
 ): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }>
 {
   if (!isGrsaiEnabled()) {
     return { newImageBase64: null, newImageMimeType: null, textResponse: 'grsai API 未配置或未启用' }
   }
   try {
-    const usedModel = opts?.model || 'nano-banana'
+    const usedModel = opts?.model || 'nano-banana-fast'
     const urls: string[] = []
     for (let i = 0; i < images.length; i++) {
       const inHref = images[i].href

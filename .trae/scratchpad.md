@@ -83,6 +83,9 @@
 - 进行中：已本地提交 `chore(release): v1.2.0` 并创建 tag `v1.2.0`，正在推送到 GitHub。
 - 已完成：API 修复已落代码（WHATAI 生图走 `/v1/images/generations` 并透传 `image_size`；GRSAI 编辑输入图归一化），并通过 `npm run lint`、`npx tsc --noEmit`、`npm run build`；等待手动出图验证（Network payload/尺寸）。
 - 已完成：已在本地 Network 验证 WHATAI 请求体包含 `image_size`（示例 `nano-banana-2` + `4K`）；未配置令牌时返回 `401 Unauthorized` 属预期。
+- 已完成：设置面板按需求调整（删除重复背景颜色、删除“API提供方”字样、“API密钥”改为“令牌”、移除高级设置相关项），并同步清理 `CanvasSettings`/`App` 传参一致性。
+- 已完成：当前代码版本 `v1.2.1`，已验证 `npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
+- 已完成：更新中英文设置文案 `API Key`→`Token`、`API 密钥`→`令牌`，与设置面板显示一致。
 
 ### 验证指引（人工）
 

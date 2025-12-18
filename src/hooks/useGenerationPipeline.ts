@@ -170,7 +170,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
         })
         const imagesToProcess = await Promise.all(imagePromises)
         const result = apiProvider === 'Grsai'
-          ? await editImageGrsai(prompt, imagesToProcess, { imageSize, model: (imageModel as 'nano-banana' | 'nano-banana-pro') })
+          ? await editImageGrsai(prompt, imagesToProcess, { imageSize, model: (imageModel as 'nano-banana-fast' | 'nano-banana-pro') })
           : await editImageWhatai(prompt, imagesToProcess, { imageSize, model: imageModel })
         if (result.newImageBase64 && result.newImageMimeType) {
           const { newImageBase64, newImageMimeType } = result
@@ -221,7 +221,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
           aspectRatio = best.ar
         }
         const result = apiProvider === 'Grsai'
-          ? await generateImageFromTextGrsai(prompt, (imageModel as 'nano-banana' | 'nano-banana-pro') || undefined, { aspectRatio, imageSize })
+          ? await generateImageFromTextGrsai(prompt, (imageModel as 'nano-banana-fast' | 'nano-banana-pro') || undefined, { aspectRatio, imageSize })
           : await generateImageFromTextWhatai(prompt, imageModel || undefined, { aspectRatio, imageSize })
         if (result.newImageBase64 && result.newImageMimeType) {
           const { newImageBase64, newImageMimeType } = result
