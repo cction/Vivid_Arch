@@ -6,6 +6,7 @@
 - PowerShell 中对 `git` 的错误需要检查 `$LASTEXITCODE` 或解析标准输出/错误；`try/catch` 对非终止错误无法捕获，可能出现“失败但日志显示成功”的假象。
 - 将令牌存放在 `.trae/githubPAT` 并通过 `.trae/.gitignore` 忽略，避免误提交与泄露。
 - Windows 行尾：`CRLF/LF` 提示属正常；可在 `.gitattributes` 统一行尾，或设置 `core.autocrlf=true` 以减少提示。
+- 若公司网络/代理导致 `github.com:443` 连接失败（如 `Failed to connect to github.com port 443` / `Recv failure: Connection was reset`），可切换 `origin` 为 SSH（`git@github.com:owner/repo.git`）并走 `github.com:22` 推送；若 `Permission denied (publickey)`，需先将 `~/.ssh/id_ed25519.pub` 添加到 GitHub 的 SSH keys。
 
 ## 打包与桌面应用（Electron）
 - `electron-builder` 要求 `package.json.name` 使用规范 ASCII 名称（不支持 emoji/特殊符号）；可通过 `productName` 设置展示名。

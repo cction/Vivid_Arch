@@ -186,3 +186,11 @@
 验证说明：
 - 运行 `npm run lint`、`npx tsc --noEmit`、`npm run build` 均通过
 - 手动：在 PromptBar 切换代理/模型后发起生成，确认“展示名”与“请求模型 id”对应关系正确
+
+## v1.2.1 (2025-12-18)
+
+- fix(whatai-generations): 严格按 `Nano-banana(Generations，推荐对接)` 文档调用 `/v1/images/generations`，移除 `nano-banana-hd` 相关逻辑，仅在 `nano-banana/nano-banana-2` 时生效
+- fix(image-size): 当模型为 `nano-banana-2` 且选择 `2K/4K` 时透传 `image_size`，并根据尺寸自动选择 `response_format`（`b64_json/url`），在控制台输出实际返回宽高以便核对
+- fix(grsai-edit): 参考图 `href` 解析为 `blob:` 或其它不可直接访问来源时增加容错与调试日志，失败时不会构造非法 `data:image/...;base64,blob:...`
+- chore(errors): WHATAI/GRSAI 接口错误内容统一截断到 400 字符，保留关键字段同时避免“长文本已截断”干扰调试
+- verify: 通过 `npm run lint`、`npx tsc --noEmit`、`npm run build`，手动验证 WHATAI/GRSAI 2K/4K 出图链路

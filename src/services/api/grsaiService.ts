@@ -45,6 +45,44 @@ function detectMimeFromBase64(b64: string): string {
   return 'image/png'
 }
 
+async function resolveToGrsaiUrl(href: string, mimeType?: string): Promise<{ url: string; kind: 'http' | 'data' | 'fetched' | 'unknown' }> {
+  const s = String(href || '')
+  if (/^https?:\/\//i.test(s)) return { url: s, kind: 'http' }
+  if (s.startsWith('data:')) {
+    const comma = s.indexOf(',')
+    if (comma > 0) {
+      const meta = s.slice(0, comma)
+      const raw = s.slice(comma + 1)
+      const metaMimeMatch = /data:(.*?)(;base64)?$/i.exec(meta)
+      const mime = (metaMimeMatch && metaMimeMatch[1]) ? metaMimeMatch[1] : (mimeType || 'image/png')
+      const b64 = normalizeBase64(stripBase64Header(raw))
+      return { url: `data:${mime};base64,${b64}`, kind: 'data' }
+    }
+    return { url: s, kind: 'data' }
+  }
+  if (typeof fetch === 'function' && typeof FileReader !== 'undefined') {
+    try {
+      const r = await fetch(s)
+      const blob = await r.blob()
+      const reader = new FileReader()
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(String(reader.result || ''))
+        reader.onerror = () => reject(reader.error || new Error('FileReader failed'))
+        reader.readAsDataURL(blob)
+      })
+      const outMime = (blob.type && blob.type.startsWith('image/')) ? blob.type : (mimeType || 'image/png')
+      const outComma = dataUrl.indexOf(',')
+      const outRaw = outComma >= 0 ? dataUrl.slice(outComma + 1) : dataUrl
+      const outB64 = normalizeBase64(stripBase64Header(outRaw))
+      return { url: `data:${outMime};base64,${outB64}`, kind: 'fetched' }
+    } catch (err) {
+      try { console.debug('[grsai] resolve input image failed', { href: s.slice(0, 80), err: err instanceof Error ? err.message : String(err) }) } catch { void 0 }
+      return { url: s, kind: 'unknown' }
+    }
+  }
+  return { url: s, kind: 'unknown' }
+}
+
  
 
 
@@ -82,7 +120,12 @@ async function grsaiFetch(path: string, init: RequestInit): Promise<Response> {
     try { resp = await withRetry(() => fetch(directUrl, finalInit), { retries: 3, baseDelayMs: 800 }) }
     catch (err2) { const e = firstError || err2; throw e instanceof Error ? e : new Error(String(e)) }
   }
-  if (!resp.ok) { const text = await resp.text().catch(() => '') ; throw new Error(`grsai API Error: ${resp.status} ${resp.statusText} ${text}`) }
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '')
+    const maxLen = 400
+    const preview = text.length > maxLen ? `${text.substring(0, maxLen)}...[truncated ${text.length - maxLen} chars]` : text
+    throw new Error(`grsai API Error: ${resp.status} ${resp.statusText} ${preview}`)
+  }
   return resp
 }
 
@@ -200,10 +243,14 @@ export async function editImage(
     const usedModel = opts?.model || 'nano-banana'
     const urls: string[] = []
     for (let i = 0; i < images.length; i++) {
-      const raw = normalizeBase64(stripBase64Header(images[i].href))
-      const mime = images[i].mimeType || 'image/png'
-      const dataUrl = `data:${mime};base64,${raw}`
-      urls.push(dataUrl)
+      const inHref = images[i].href
+      const inMime = images[i].mimeType || 'image/png'
+      const resolved = await resolveToGrsaiUrl(inHref, inMime)
+      urls.push(resolved.url)
+      try {
+        const preview = resolved.url.startsWith('data:') ? resolved.url.slice(0, 64) + '...' : resolved.url.slice(0, 120)
+        console.debug('[grsai editImage] input url', { idx: i, kind: resolved.kind, preview })
+      } catch { void 0 }
     }
     const body = {
       model: usedModel,
