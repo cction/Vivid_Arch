@@ -1,6 +1,14 @@
-# BananaPod｜图像生成与编辑工作台（v1.2.0）
+# BananaPod｜图像生成与编辑工作台（v1.2.3）
 
 轻量、可扩展的图像生成与编辑工作台，采用 PodUI 主题。统一第三方 API 为 OpenAI 风格接口（基于 `whatai.cc`），支持图层系统、裁剪与合并、双语界面、iPad/Apple Pencil 场景。
+
+## 核心更新（v1.2.3）
+- 性能：画布交互与历史记录链路全面优化，引入 History v2 增量 patch（默认可选开启），在高频撤销/重做与大量元素场景下降低内存与序列化开销
+- 会话：会话保存流程抽象为“防抖 + 空闲落盘”，在 IndexedDB/WebCrypto 不可用时自动降级到 `localStorage` 与回退哈希实现，保障最近 5 个图版的恢复能力
+- 面板：图层面板引入索引与虚拟化渲染，大幅降低上百元素场景下的渲染压力
+- 命中测试：选框/套索/橡皮擦等高频命中操作接入空间索引，在复杂画面中保持可接受的交互延迟
+- 调试：在 `BANANAPOD_DEBUG_PERF=1` 下增加 `[Perf][BoardActions]` 与 `[Perf][LastSession]` 统计输出，便于排查性能瓶颈
+- 验证：通过 `npm run lint`、`npx tsc --noEmit`、`npm run build`
 
 ## 核心更新（v1.2.0）
 - 模型：收敛代理 A/B 可选模型，每个代理仅保留 2 个模型选项
@@ -106,12 +114,12 @@ BananaPod/
 - 应用内密钥保存在 `localStorage`，不会在日志中打印；仅在请求头附加
 
 ## 版本与发布
-- 当前版本：`1.2.0`
+- 当前版本：`1.2.3`
 - 关键变更：
-  - 收敛代理 A/B 可选模型，每个代理仅保留 2 个模型选项
-  - PromptBar 模型展示名改为 `Standard_A/Professional_A` 与 `Standard_B/Professional_B`（请求仍使用原模型 id）
-  - 旧 `localStorage` 模型值自动回退归一化
-  - 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.2.0`
+  - 画布交互与历史记录性能优化，新增可选 History v2 增量 diff 模式
+  - 会话保存链路在 IndexedDB/LocalStorage/WebCrypto 各种环境下具备完整回退与调试输出
+  - 图层面板与命中测试引入索引/虚拟化，保证复杂画面下的交互流畅度
+  - 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.2.3`
 
 ## 致谢
 - 模型：`nano-banana` 系列、`gemini-3-pro-image-preview`

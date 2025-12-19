@@ -194,3 +194,12 @@
 - fix(grsai-edit): 参考图 `href` 解析为 `blob:` 或其它不可直接访问来源时增加容错与调试日志，失败时不会构造非法 `data:image/...;base64,blob:...`
 - chore(errors): WHATAI/GRSAI 接口错误内容统一截断到 400 字符，保留关键字段同时避免“长文本已截断”干扰调试
 - verify: 通过 `npm run lint`、`npx tsc --noEmit`、`npm run build`，手动验证 WHATAI/GRSAI 2K/4K 出图链路
+
+## v1.2.3 (2025-12-19)
+
+- perf(board-history): 引入 History v2 增量 patch 结构，支持按需开启“增量 diff”记录模式，降低频繁撤销/重做场景下的内存与序列化开销（默认仍保留 v1 快照以兼容旧会话）
+- perf(board-interaction): 将画布交互期间的中间态更新改为“transient 更新”，仅在提交态写入历史与会话，显著减少拖拽/缩放/绘制时的长任务次数
+- perf(layer-panel): 为图层面板引入索引与虚拟化渲染，降低大量元素场景下的重排/重绘成本
+- perf(spatial-index): 为选框/套索/橡皮擦等操作接入空间索引，替代全量遍历命中测试，在高元素数量下保持可接受的响应时间
+- fix(session-storage): 完成会话保存链路在 IndexedDB/localStorage/WebCrypto 不可用时的降级与调试输出，确保异常环境下仍能恢复最近 5 个图版
+- docs/release: 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.2.3`

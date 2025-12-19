@@ -8,6 +8,141 @@ const canUseWebCrypto = isBrowserEnv
   && (typeof crypto !== 'undefined')
   && (crypto.subtle != null)
   && (typeof crypto.subtle.digest === 'function')
+let perfLastEnabledCheckAt = 0
+let perfEnabledCached = false
+let perfLogTimer: number | null = null
+let perfCounters = { touch: 0, debounced: 0, idleRun: 0, save: 0, flush: 0 }
+let perfLastSaveBackend: 'indexedDB' | 'localStorage' | 'server' | null = null
+let perfLastStringifyMs: number | null = null
+let perfLastStringifyVia: 'worker' | 'main' | null = null
+let perfLastImgDataUrlToBlobCount: number | null = null
+let perfLastImgDataUrlToBlobMs: number | null = null
+let perfLastImgDataUrlToBlobVia: 'fetch' | 'main' | 'mixed' | null = null
+function isForceLocalStorageEnabled(): boolean {
+  if (!isBrowserEnv) return false
+  try {
+    return localStorage.getItem('BANANAPOD_DEBUG_FORCE_LOCALSTORAGE') === '1'
+  } catch {
+    return false
+  }
+}
+function isPerfEnabled(): boolean {
+  if (!isBrowserEnv) return false
+  const now = Date.now()
+  if (now - perfLastEnabledCheckAt < 1000) return perfEnabledCached
+  perfLastEnabledCheckAt = now
+  try {
+    perfEnabledCached = localStorage.getItem('BANANAPOD_DEBUG_PERF') === '1'
+  } catch {
+    perfEnabledCached = false
+  }
+  return perfEnabledCached
+}
+function schedulePerfLog() {
+  if (!isPerfEnabled()) return
+  if (perfLogTimer != null) return
+  perfLogTimer = setTimeout(() => {
+    perfLogTimer = null
+    const snapshot = {
+      ...perfCounters,
+      backend: perfLastSaveBackend,
+      stringifyMs: perfLastStringifyMs,
+      stringifyVia: perfLastStringifyVia,
+      imgDataUrlToBlobCount: perfLastImgDataUrlToBlobCount,
+      imgDataUrlToBlobMs: perfLastImgDataUrlToBlobMs,
+      imgDataUrlToBlobVia: perfLastImgDataUrlToBlobVia,
+      hasPending: Boolean(lastSessionPending),
+      hasIdlePending: Boolean(lastSessionIdlePending),
+      hasTimer: Boolean(lastSessionTimer),
+      hasIdleHandle: Boolean(lastSessionIdleHandle),
+    }
+    perfCounters = { touch: 0, debounced: 0, idleRun: 0, save: 0, flush: 0 }
+    perfLastSaveBackend = null
+    perfLastStringifyMs = null
+    perfLastStringifyVia = null
+    perfLastImgDataUrlToBlobCount = null
+    perfLastImgDataUrlToBlobMs = null
+    perfLastImgDataUrlToBlobVia = null
+    console.log('[Perf][LastSession]', snapshot)
+  }, 1000) as unknown as number
+}
+
+let stringifyWorkerUrl: string | null = null
+let stringifyWorker: Worker | null = null
+let stringifyReqId = 0
+const stringifyPending = new Map<number, { resolve: (v: string) => void; reject: (e: unknown) => void; startedAt: number }>()
+
+function canUseStringifyWorker(): boolean {
+  return isBrowserEnv
+    && (typeof Worker !== 'undefined')
+    && (typeof Blob !== 'undefined')
+    && (typeof URL !== 'undefined')
+    && (typeof URL.createObjectURL === 'function')
+}
+
+function getStringifyWorker(): Worker | null {
+  if (!canUseStringifyWorker()) return null
+  if (stringifyWorker) return stringifyWorker
+
+  const src = `
+self.onmessage = (e) => {
+  const id = e.data && e.data.id
+  const data = e.data && e.data.data
+  try {
+    const json = JSON.stringify(data)
+    self.postMessage({ id, json })
+  } catch (err) {
+    self.postMessage({ id, error: String((err && err.message) || err) })
+  }
+}
+`
+  const blob = new Blob([src], { type: 'text/javascript' })
+  stringifyWorkerUrl = URL.createObjectURL(blob)
+  stringifyWorker = new Worker(stringifyWorkerUrl)
+  stringifyWorker.onmessage = (e: MessageEvent) => {
+    const id = e.data && e.data.id
+    const pending = stringifyPending.get(id)
+    if (!pending) return
+    stringifyPending.delete(id)
+    if (e.data && typeof e.data.json === 'string') {
+      pending.resolve(e.data.json)
+      return
+    }
+    pending.reject(new Error(e.data && e.data.error ? String(e.data.error) : 'worker stringify failed'))
+  }
+  stringifyWorker.onerror = (ev) => {
+    const pendingAll = Array.from(stringifyPending.values())
+    stringifyPending.clear()
+    for (const p of pendingAll) p.reject(ev)
+    try { stringifyWorker?.terminate() } catch (err) { void err }
+    stringifyWorker = null
+    if (stringifyWorkerUrl) {
+      try { URL.revokeObjectURL(stringifyWorkerUrl) } catch (err) { void err }
+    }
+    stringifyWorkerUrl = null
+  }
+  return stringifyWorker
+}
+
+async function stringifyForStorage(data: unknown): Promise<{ json: string; ms: number; via: 'worker' | 'main' }> {
+  const w = getStringifyWorker()
+  if (!w) {
+    const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
+    const json = JSON.stringify(data)
+    const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
+    return { json, ms: Math.max(0, t1 - t0), via: 'main' }
+  }
+
+  const id = ++stringifyReqId
+  const startedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
+  const p = new Promise<string>((resolve, reject) => {
+    stringifyPending.set(id, { resolve, reject, startedAt })
+  })
+  w.postMessage({ id, data })
+  const json = await p
+  const endedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
+  return { json, ms: Math.max(0, endedAt - startedAt), via: 'worker' }
+}
 async function serverModules() {
   const fs = await import('node:fs/promises')
   const path = await import('node:path')
@@ -74,15 +209,42 @@ async function sha256Hex(ab: ArrayBuffer): Promise<string> {
 async function hrefToBlob(href: string, expectedMime?: string): Promise<Blob> {
   if (isBrowserEnv) {
     if (href.startsWith('data:')) {
-      const comma = href.indexOf(',')
-      const meta = href.substring(0, comma)
-      const b64 = href.substring(comma + 1)
-      const mimeMatch = /data:(.*?)(;base64)?$/i.exec(meta)
-      const mime = (mimeMatch && mimeMatch[1]) ? mimeMatch[1] : (expectedMime || 'application/octet-stream')
-      const bin = atob(b64)
-      const arr = new Uint8Array(bin.length)
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
-      return new Blob([arr.buffer], { type: mime })
+      const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
+      let via: 'fetch' | 'main' = 'fetch'
+      let blob: Blob
+      try {
+        const res = await fetch(href)
+        blob = await res.blob()
+      } catch (err) {
+        via = 'main'
+        const comma = href.indexOf(',')
+        const meta = href.substring(0, comma)
+        const b64Raw = href.substring(comma + 1)
+        const mimeMatch = /data:(.*?)(;base64)?$/i.exec(meta)
+        const mime = (mimeMatch && mimeMatch[1]) ? mimeMatch[1] : (expectedMime || 'application/octet-stream')
+        const b64 = (() => {
+          let s = String(b64Raw).replace(/[\r\n\s]/g, '').replace(/-/g, '+').replace(/_/g, '/')
+          const pad = s.length % 4
+          if (pad === 2) s += '=='
+          else if (pad === 3) s += '='
+          else if (pad === 1) s += '==='
+          return s
+        })()
+        const bin = atob(b64)
+        const arr = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+        blob = new Blob([arr.buffer], { type: mime })
+        void err
+      }
+      const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
+      if (isPerfEnabled()) {
+        perfLastImgDataUrlToBlobCount = (perfLastImgDataUrlToBlobCount ?? 0) + 1
+        perfLastImgDataUrlToBlobMs = (perfLastImgDataUrlToBlobMs ?? 0) + Math.max(0, t1 - t0)
+        perfLastImgDataUrlToBlobVia = (perfLastImgDataUrlToBlobVia == null || perfLastImgDataUrlToBlobVia === via) ? via : 'mixed'
+        schedulePerfLog()
+      }
+      if (expectedMime && blob.type && expectedMime !== blob.type) return new Blob([await blob.arrayBuffer()], { type: expectedMime })
+      return blob
     }
     const res = await fetch(href)
     const blob = await res.blob()
@@ -168,9 +330,15 @@ async function slimElement(el: Element): Promise<Element> {
     let href = img.href
     if (!href.startsWith('image:')) {
       if (isBrowserEnv && !canUseIndexedDB) return { ...el }
-      const blob = await hrefToBlob(href, img.mimeType)
-      const hash = await putImageBlob(blob)
-      href = `image:${hash}`
+      if (isBrowserEnv && href.startsWith('blob:')) {
+        const knownHash = getKnownImageHashFromObjectUrl(href)
+        if (knownHash) href = `image:${knownHash}`
+      }
+      if (!href.startsWith('image:')) {
+        const blob = await hrefToBlob(href, img.mimeType)
+        const hash = await putImageBlob(blob)
+        href = `image:${hash}`
+      }
     }
     const next: ImageElement = {
       id: img.id,
@@ -218,6 +386,43 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   return `data:${mime};base64,${b64}`
 }
 
+const imageHashToObjectUrl = new Map<string, string>()
+const objectUrlToImageHash = new Map<string, string>()
+const maxObjectUrlCache = 200
+
+function rememberObjectUrl(hash: string, url: string) {
+  if (!hash || !url) return
+  if (imageHashToObjectUrl.has(hash)) imageHashToObjectUrl.delete(hash)
+  imageHashToObjectUrl.set(hash, url)
+  objectUrlToImageHash.set(url, hash)
+
+  while (imageHashToObjectUrl.size > maxObjectUrlCache) {
+    const first = imageHashToObjectUrl.entries().next().value as [string, string] | undefined
+    if (!first) break
+    const [oldHash, oldUrl] = first
+    imageHashToObjectUrl.delete(oldHash)
+    objectUrlToImageHash.delete(oldUrl)
+    try { URL.revokeObjectURL(oldUrl) } catch (err) { void err }
+  }
+}
+
+function getKnownImageHashFromObjectUrl(url: string): string | null {
+  return objectUrlToImageHash.get(url) || null
+}
+
+function getObjectUrlForImageHash(hash: string, blob: Blob): string | null {
+  if (!isBrowserEnv) return null
+  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return null
+  const cached = imageHashToObjectUrl.get(hash)
+  if (cached) {
+    rememberObjectUrl(hash, cached)
+    return cached
+  }
+  const url = URL.createObjectURL(blob)
+  rememberObjectUrl(hash, url)
+  return url
+}
+
 async function inflateElementToDataUrl(el: Element): Promise<Element> {
   if ((el as ImageElement).type === 'image') {
     const img = el as ImageElement
@@ -225,6 +430,8 @@ async function inflateElementToDataUrl(el: Element): Promise<Element> {
       const hash = img.href.slice('image:'.length)
       const blob = await getImageBlob(hash)
       if (blob) {
+        const objectUrl = getObjectUrlForImageHash(hash, blob)
+        if (objectUrl) return { ...img, href: objectUrl, mimeType: blob.type || img.mimeType }
         const dataUrl = await blobToDataUrl(blob)
         return { ...img, href: dataUrl, mimeType: blob.type || img.mimeType }
       }
@@ -316,15 +523,24 @@ async function saveLastSessionToLocalStorage(payload: { boards: Board[]; activeB
   const picked = pickRecentBoards(payload, 5)
   const slimmed = picked.boards.map(slimBoardForLocalStorage)
   const data = { timestamp: Date.now(), boards: slimmed, activeBoardId: picked.activeBoardId }
-  localStorage.setItem(lastSessionLocalStorageKey, JSON.stringify(data))
+  const r = await stringifyForStorage(data)
+  perfLastSaveBackend = 'localStorage'
+  perfLastStringifyMs = r.ms
+  perfLastStringifyVia = r.via
+  schedulePerfLog()
+  localStorage.setItem(lastSessionLocalStorageKey, r.json)
 }
 
 export async function saveLastSession(payload: { boards: Board[]; activeBoardId: string }) {
+  perfCounters.save += 1
+  schedulePerfLog()
   lastSessionSaveCount += 1
   if (isBrowserEnv) {
-    if (canUseIndexedDB) {
+    if (canUseIndexedDB && !isForceLocalStorageEnabled()) {
       try {
         await saveLastSessionToIndexedDB(payload)
+        perfLastSaveBackend = 'indexedDB'
+        schedulePerfLog()
         if (lastSessionSaveCount <= 2) console.log('[LastSession] saved to indexedDB')
         return
       } catch (err) {
@@ -348,7 +564,14 @@ export async function saveLastSession(payload: { boards: Board[]; activeBoardId:
     const { fs, path } = await serverModules()
     const base = getBaseDir()
     const data = { timestamp: Date.now(), boards: slimmed, activeBoardId: picked.activeBoardId }
-    await fs.writeFile(path.join(base, 'lastSession.json'), JSON.stringify(data))
+    const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
+    const json = JSON.stringify(data)
+    const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()
+    perfLastSaveBackend = 'server'
+    perfLastStringifyMs = Math.max(0, t1 - t0)
+    perfLastStringifyVia = 'main'
+    schedulePerfLog()
+    await fs.writeFile(path.join(base, 'lastSession.json'), json)
   }
 }
 let lastSessionTimer: number | null = null
@@ -362,6 +585,8 @@ function scheduleLastSessionSaveInIdle(payload: { boards: Board[]; activeBoardId
     : null
 
   if (!ric) {
+    perfCounters.idleRun += 1
+    schedulePerfLog()
     void saveLastSession(payload)
     return
   }
@@ -374,15 +599,21 @@ function scheduleLastSessionSaveInIdle(payload: { boards: Board[]; activeBoardId
     const p = lastSessionIdlePending
     lastSessionIdlePending = null
     if (!p) return
+    perfCounters.idleRun += 1
+    schedulePerfLog()
     await saveLastSession(p)
   }, { timeout: 2000 })
 }
 
 export function touchLastSessionPending(payload: { boards: Board[]; activeBoardId: string }) {
+  perfCounters.touch += 1
+  schedulePerfLog()
   lastSessionPending = payload
   saveLastSessionDebounced(payload)
 }
 export function saveLastSessionDebounced(payload: { boards: Board[]; activeBoardId: string }, delay: number = 800) {
+  perfCounters.debounced += 1
+  schedulePerfLog()
   lastSessionPending = payload
   if (lastSessionTimer != null) {
     clearTimeout(lastSessionTimer)
@@ -396,6 +627,8 @@ export function saveLastSessionDebounced(payload: { boards: Board[]; activeBoard
   }, delay) as unknown as number
 }
 export async function flushLastSessionSave() {
+  perfCounters.flush += 1
+  schedulePerfLog()
   if (lastSessionTimer != null) {
     clearTimeout(lastSessionTimer)
     lastSessionTimer = null

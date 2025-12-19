@@ -92,6 +92,23 @@ export interface GroupElement extends CanvasElementBase {
 
 export type Element = ImageElement | PathElement | ShapeElement | TextElement | ArrowElement | LineElement | GroupElement | VideoElement;
 
+export type HistoryV1 = Element[][];
+
+export type HistoryEntryV2 =
+  | { kind: 'snapshot'; elements: Element[] }
+  | {
+      kind: 'patch';
+      added: Element[];
+      removed: Element[];
+      updated: Array<{ before: Element; after: Element }>;
+      beforeOrder: string[];
+      afterOrder: string[];
+    };
+
+export type HistoryV2 = HistoryEntryV2[];
+
+export type BoardHistory = HistoryV1 | HistoryV2;
+
 export interface UserEffect {
   id: string;
   name: string;
@@ -102,7 +119,7 @@ export interface Board {
   id: string;
   name: string;
   elements: Element[];
-  history: Element[][];
+  history: BoardHistory;
   historyIndex: number;
   panOffset: Point;
   zoom: number;

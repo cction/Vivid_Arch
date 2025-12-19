@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, forwardRef, memo } from 'react';
 import type { Board } from '@/types';
 import { IconButton, Panel, MenuItem, Input } from '../../../ui';
+import { BoardThumbnail } from './BoardThumbnail';
 
 type BoardItemProps = {
   board: Board;
@@ -13,10 +14,11 @@ type BoardItemProps = {
   dataBoardId: string;
 };
 
-export const BoardItem = forwardRef<HTMLDivElement, BoardItemProps>(function BoardItem({ board, isActive, thumbnail, onClick, onRename, onDuplicate, onDelete, dataBoardId }, ref) {
+export const BoardItem = forwardRef<HTMLDivElement, BoardItemProps>(function BoardItem({ board, isActive, thumbnail: _thumbnail, onClick, onRename, onDuplicate, onDelete, dataBoardId }, ref) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(board.name);
   const [menuOpen, setMenuOpen] = useState(false);
+  void _thumbnail;
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -72,7 +74,7 @@ export const BoardItem = forwardRef<HTMLDivElement, BoardItemProps>(function Boa
       className={`group relative p-2 pod-list-item cursor-pointer ${isActive ? 'selected' : ''}`}
     >
       <div className={`aspect-[3/2] w-full rounded-md mb-2 overflow-hidden border-2 ${isActive ? 'border-[var(--text-accent)]' : 'border-transparent'}`}>
-        <img src={thumbnail} alt={`${board.name} thumbnail`} className="w-full h-full object-cover" />
+        <BoardThumbnail board={board} />
       </div>
       <div className="flex items-center justify-between">
         {isEditing ? (

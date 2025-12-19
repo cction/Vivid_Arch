@@ -21,6 +21,10 @@
 - 所有外部调用输出需包含调试信息（状态码、错误消息、关键参数），便于快速定位问题。
 - 网络错误（如 `Recv failure: Connection was reset`）需与认证错误区分；优先验证令牌权限与有效性，再排查网络或代理。
 
+## 撤销历史（History）
+- History v2 以 `patch` 记录增量（added/removed/updated + before/afterOrder），可通过 `localStorage.setItem('BANANAPOD_HISTORY_DIFF','1')` 启用；默认保持 v1 快照。
+- 超过 `MAX_HISTORY` 时，v2 会把被裁剪后的首项物化为 `snapshot`，保证撤销链条可继续回放。
+
 ## UI 改动经验
 - 透明度与不透明度：界面以 0–100 输入更直观，渲染与导出时需转换为 0–1（浮点），统一在 `<image>` 与 SVG 字符串中写入。
 - 保兼容旧字段：替换工具栏功能时，保留既有 `borderRadius` 的渲染逻辑，避免破坏历史内容。

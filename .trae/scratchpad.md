@@ -8,68 +8,121 @@
 
 ## 背景和动机
 
-- 现状：代理 A/代理 B 在接入层可选模型数量偏多，PromptBar 展示名称与实际接入模型名耦合，维护与沟通成本高。
-- 目标：收敛每个代理在接入层的模型数量，同时仅调整 PromptBar 展示名称（后台接入模型名称不变），避免影响后端路由与计费/权限等逻辑。
+- 现状：当前画布的“记录功能”（撤销/重做历史与会话保存）在操作频繁、图片与元素数量增多时，明显拖累交互流畅度；拖动画布与拖动元素均出现卡顿。
+- 目标：在不改变用户功能（撤销/重做、会话恢复、图层面板等）的前提下，大幅提升交互性能，确保拖动/缩放/绘制在大数据量下仍保持顺滑。
+- 范围：本轮仅聚焦“交互期间的状态更新/历史记录/面板渲染/会话保存”四类热点；不引入新框架，不进行大规模架构重写。
+- 部署适用性：本轮优化主要发生在前端运行时（浏览器主线程负载与渲染路径），因此无论是本地、静态托管还是带后端的服务器部署，只要前端版本升级上线均生效；服务端主要影响首次加载与接口响应，不是交互卡顿的主因。
 
 ## 关键挑战和分析
 
-- “后台接入模型名称不更改”约束：需要区分“展示名（UI label）”与“真实模型 id（backend/model key）”，避免重命名导致请求参数变化。
-- 配置来源不唯一风险：模型列表可能同时存在于前端常量、后端配置、环境变量、远端配置或 feature flag 中，需先梳理“单一事实来源”。
-- 兼容性：若历史会话/本地存储记录了旧的展示名或旧配置结构，需要保证升级后仍能映射到正确的 backend 模型 id。
-- 可观测性：需要能在调试信息中明确看到“用户选择的展示名”与“实际发起请求的模型 id”。
+- 当前实现存在“高频写入历史/持久化”的放大效应：
+  - 交互过程（mousemove）使用“非提交更新”时仍会复制历史数组并覆写当前 history slot，导致复杂度随 `history.length` 增长。
+  - 交互过程仍触发会话保存调度，带来额外对象分配与 IO 排队。
+- 图层面板与其他面板可能在元素变化时被动重渲染，且存在 `O(n^2)` 级别的列表构建（递归过程中反复 filter）。
+- 在不破坏撤销/重做语义的情况下，需要将“交互中间态”与“最终提交态”拆开，避免中间态污染历史与持久化。
+- 需要建立可量化的验收指标与调试信息，避免“感觉更快”但没有证据或回归难排查。
+- 中长期瓶颈：即使解决历史/保存放大效应，元素数量继续上升时仍可能被“全量遍历（命中测试、对齐吸附、bounds 计算）”和“面板 DOM 规模”压垮，需要准备可扩展路径（索引、缓存、虚拟化、Worker）。
+- 后续主要风险点集中在“会话保存”的同步路径：
+  - 浏览器端优先走 IndexedDB（异步），但在 IndexedDB 不可用/失败时会回落到 localStorage，而 localStorage 的 `setItem` 为同步调用，可能造成明显主线程卡顿。
+  - `saveLastSession` 过程会对图片做去重落库（`sha256` + IndexedDB/文件写入），并对 payload 做 `JSON.stringify`（localStorage 与服务端写文件时），在压力数据量下仍可能成为长任务来源。
 
 ## 成功标准
 
-- 代理 A：接入层仅保留 `nano-banana`、`nano-banana-2` 两个模型可选；PromptBar 展示分别为 `Standard_A`、`Professional_A`；请求仍使用原模型名。
-- 代理 B：接入层仅保留 `nano-banana`、`nano-banana-pro` 两个模型可选；PromptBar 展示分别为 `Standard_B`、`Professional_B`；请求仍使用原模型名。
-- 回归：切换代理/切换模型/发起对话不报错；请求 payload/日志中模型 id 与后台保持一致；不存在“选择项显示正确但请求模型错误”的情况。
+- 交互顺滑：
+  - 在包含 200+ 元素（含 50+ 图片）的画布上，连续拖动 5 秒，主观无明显卡顿；开发者工具中长任务（Long Task）显著减少。
+  - 平移（中键/空格拖拽）与缩放（滚轮）在大数据量下保持稳定帧率，mousemove 期间状态更新频率不超过屏幕刷新率。
+- 性能指标（用于对比，不作为硬性门槛）：
+  - 拖动/缩放期间，`elements` 更新被合并到 rAF，避免“同一帧多次 setState”。
+  - 交互期间会话保存触发次数接近 0，提交态才触发保存与历史写入。
+  - 在压力场景下内存增长可控（history 不无限增长，图片/数据 URL 不重复拷贝）。
+- 功能不回归：
+  - 撤销/重做行为与当前一致：一次拖动/一次缩放/一次绘制对应一次可撤销记录（不把中间态写入历史）。
+  - 会话恢复：刷新后仍能恢复到“最后一次提交状态”（不要求恢复到拖动中间态）。
+  - 图层面板：层级展示与选择、可见/锁定、重命名、拖拽排序行为保持正确。
+- 可观测性：
+  - 在调试输出中能看到：history 长度、交互期间更新频率、会话保存触发次数（仅输出计数/类型，不输出敏感信息）。
 
 ## 高层任务拆分
 
-1. 梳理接入模型定义位置与数据流
-   - 找到代理 A/代理 B 的模型列表来源（前端 PromptBar、后端路由、默认配置、存储恢复）。
-   - 明确“展示名字段”与“真实模型字段”的结构与传递路径。
+0. 建立基线与调试指标（先做，贯穿全程）
+   - 增加轻量调试计数：交互期间每秒更新次数、每次提交 history 长度变化、会话保存触发次数。
+   - 建立固定压力场景与复测脚本（人工步骤即可），保证每步优化都能量化对比。
 
-2. 收敛代理 A/代理 B 的模型列表
-   - 代理 A：仅保留 `nano-banana`、`nano-banana-2`。
-   - 代理 B：仅保留 `nano-banana`、`nano-banana-pro`。
+1. 修复历史记录写入放大效应（最高收益、最小改动）
+   - 交互过程中仅更新 `elements`（或临时 state），禁止复制/写入 `history`。
+   - 交互结束（mouseup / gesture end）一次性提交历史记录，保持撤销/重做语义不变。
 
-3. 调整 PromptBar 展示名称映射（不改后台模型名）
-   - PromptBar 中将 `nano-banana` 显示为 `Standard_A`（代理 A）与 `Standard_B`（代理 B）。
-   - PromptBar 中将 `nano-banana-2` 显示为 `Professional_A`（代理 A）。
-   - PromptBar 中将 `nano-banana-pro` 显示为 `Professional_B`（代理 B）。
-   - 确保提交请求时仍使用 backend 模型名（原始模型 id）。
+2. 修复会话保存放大效应（高收益、低风险）
+   - “silent 更新”不触发 `touchLastSessionPending`；仅在“提交态”触发保存。
+   - 保存仍走 idle/debounce，兼容页面关闭/定时 flush，确保最终态可恢复。
 
-4. 兼容与迁移（如有存储）
-   - 若本地存储/会话中持久化了“展示名”，增加映射回退到真实模型 id。
-   - 若仅持久化“真实模型 id”，确保新展示名不影响读取。
+3. 将交互更新合并到 rAF（高收益、需要谨慎验证）
+   - resize/drag/draw/erase 等 mousemove 更新合并到 `requestAnimationFrame`，把高频事件压到 60fps 上限。
+   - 确保在 mouseup 前最后一帧必定落地，避免位置回跳或丢帧。
 
-5. 验证与回归
-   - 覆盖：代理切换、模型切换、刷新恢复、历史会话恢复（如存在）、错误兜底路径。
-   - 记录：在调试输出中打印展示名与真实模型 id（不输出任何敏感信息）。
+4. 优化图层面板渲染（中高收益，元素多时质变）
+   - 将层级构建从“递归 filter”改为一次性索引（`parentId -> children[]`），并基于 memo 复用。
+   - 交互期间对面板采取“冻结/降频刷新”策略，避免面板跟随每帧变化重渲染。
+
+5. 控制历史增长与内存压力（中收益，稳定性增强）
+   - 增加 `maxHistory` 上限（如 100/200），超出时丢弃最旧记录；保证 `history.length` 不随使用时间无限增长。
+   - 对连续同类操作进行合并策略（如短时间内多次微调合并为一次记录，或按工具类型合并）。
+
+6. 降低“全量遍历”成本：bounds 缓存 + 空间索引（可选，元素继续增多时必须）
+   - 对 `getElementBounds` 等几何计算引入缓存（基于元素版本/变更标记），避免每帧重复算全量。
+   - 对命中测试/对齐吸附/选框选择引入简单空间索引（网格或四叉树），从 `O(n)` 扫描降到近似 `O(k)`。
+
+7. 面板与列表虚拟化（可选，DOM 规模过大时必做）
+   - 图层面板采用虚拟滚动，仅渲染可视区，避免数千节点导致布局/绘制卡顿。
+   - Board 列表、缩略图等同类组件按需引入虚拟化或延迟渲染。
+
+8. 将序列化/持久化移出主线程（可选，保存仍占用明显时）
+   - 会话保存中的 `JSON.stringify` 与 slim/压缩逻辑迁移到 Web Worker 或分片执行。
+   - 保存触发策略进一步优化：只在提交态保存；或按时间窗合并多次提交。
+   - 实施要点（规划）：
+     - 明确瓶颈是否来自 localStorage 回退：在开启 `BANANAPOD_DEBUG_PERF=1` 时补充输出“保存路径”（indexedDB/localStorage/server）与序列化耗时区间。
+     - Worker 优先覆盖 `JSON.stringify(data)`：将待保存对象传入 Worker，Worker 返回序列化结果；主线程仅负责最小的落盘调用（localStorage 或 fs.writeFile）。
+     - localStorage 同步不可避免：若确实频繁落到 localStorage，则降低保存数据量（例如更小的 pickRecentBoards 上限或更激进的 slim），并延长 debounce/仅在 idle 空闲窗口保存。
+     - 兼容性：Worker 仅在浏览器环境启用；IndexedDB 仍是首选路径；失败时才走 localStorage 回退。
+   - 成功标准（验证）：
+     - 压力场景下 Console 中 `[Perf][LastSession]` 的 `save`/`idleRun` 次数与交互卡顿无明显相关，且 localStorage 回退时序列化耗时不再形成长任务。
+     - 刷新恢复仍正确（`loadLastSession` 能恢复最后一次提交态）。
+
+9. 历史存储从“全量快照”演进为“增量 diff”（可选，改动较大但上限最高）
+   - History 条目改为 patch：记录受影响元素的 before/after（或操作类型 + 参数），撤销/重做按 patch 回放。
+   - 持久化结构需要兼容旧格式，提供迁移与回滚路径。
+
+10. 图片与渲染路径专项优化（可选，图片继续增多时）
+   - 对大图导入做下采样/多级分辨率策略（视图缩放时用低分辨率预览，停下后再替换高清）。
+   - 对 rasterize/合并等重操作放到 Worker 或分批执行，避免阻塞交互。
 
 ## 项目状态看板
 
 ### 已完成
-- [x] 梳理代理 A/B 模型配置来源与引用点
-- [x] 收敛代理 A 模型为 `nano-banana`/`nano-banana-2`
-- [x] 收敛代理 B 模型为 `nano-banana`/`nano-banana-pro`
-- [x] PromptBar 显示名映射为 `Standard_*`/`Professional_*`
-- [x] 补齐存储兼容回退与回归验证
+
+- [x] 建立基线与调试指标
+- [x] 修复历史记录写入放大效应
+- [x] 修复会话保存放大效应
+- [x] 将交互更新合并到 rAF
+- [x] 优化图层面板渲染（索引 + 冻结/降频）
+- [x] 控制历史增长与内存压力（maxHistory/合并策略）
+- [x] 降低全量遍历成本（bounds 缓存 + 空间索引）（已接入：选框/套索/橡皮擦；已回归验证：MCP 选框/套索/橡皮擦）
+- [x] 面板与列表虚拟化（可选）（已对图层面板生效）
+- [x] 序列化/持久化移出主线程（可选）（已落地：localStorage 回退路径 stringify → Worker；已验证：MCP 强制回退 + Perf 日志）
+- [x] 优化图片 dataURL 转 Blob 的主线程开销（可选）（已落地：data: 路径优先 fetch→blob；已验证：Perf 输出 imgDataUrlToBlob*）
+- [x] 历史增量 diff 方案设计与落地（可选）（已落地：History v2 patch；默认关闭）
 
 ### 进行中
-- [x] 更新版本为 v1.2.0 并补齐中文变更记录
-- [x] 构建并打包 dist 产物
-- [x] 提交并推送 git tag v1.2.0
+
+- [ ] 图片与渲染路径专项优化（可选）
 
 ### 待办
-- [ ] 无
 
 ## 回滚方案
 
-- 配置回滚：恢复原代理 A/B 模型列表与 PromptBar 映射配置即可。
-- 兼容回滚：保留旧展示名映射分支以支持旧会话/存储读取。
-- 发布回滚：构建产物回退到上一版本，确保请求模型 id 未变更。
+- 快速回滚：保留原有更新路径开关（通过常量/配置切换）以便在出现撤销异常或保存丢失时恢复旧逻辑。
+- 数据兼容：任何持久化结构变更（如历史 diff）都必须保留读取旧格式的兼容分支，确保升级后仍可恢复会话。
+- 观测回滚：在回滚时保留性能指标日志，以便复盘原因并制定二次改进。
 
 ## 执行者反馈或请求帮助（占位）
 
@@ -77,74 +130,38 @@
 
 ### 当前状态/进度跟踪
 
-- 已完成：代理 A/代理 B 模型选项收敛与 PromptBar 展示名映射（后台模型 id 不变），并增加对旧存储模型值的回退归一化。
-- 已完成：同步版本号到 `v1.2.0`，补齐中文变更记录；并验证 `npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
-- 已完成：构建并打包 `dist`，产物为 `dist.zip`。
-- 进行中：已本地提交 `chore(release): v1.2.0` 并创建 tag `v1.2.0`，正在推送到 GitHub。
-- 已完成：API 修复已落代码（WHATAI 生图走 `/v1/images/generations` 并透传 `image_size`；GRSAI 编辑输入图归一化），并通过 `npm run lint`、`npx tsc --noEmit`、`npm run build`；等待手动出图验证（Network payload/尺寸）。
-- 已完成：已在本地 Network 验证 WHATAI 请求体包含 `image_size`（示例 `nano-banana-2` + `4K`）；未配置令牌时返回 `401 Unauthorized` 属预期。
-- 已完成：设置面板按需求调整（删除重复背景颜色、删除“API提供方”字样、“API密钥”改为“令牌”、移除高级设置相关项），并同步清理 `CanvasSettings`/`App` 传参一致性。
-- 已完成：当前代码版本 `v1.2.1`，已验证 `npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
-- 已完成：更新中英文设置文案 `API Key`→`Token`、`API 密钥`→`令牌`，与设置面板显示一致。
+- 执行者：已落地性能调试指标输出（每秒汇总），用于后续逐项优化前后对比。
+- 执行者：已停止交互过程中对 `history` 的复制/写入，中间态仅更新 `elements`，以降低拖动/绘制时的时间复杂度。
+- 执行者：已将高频元素更新切换为“transient 更新”，交互中不再触发 `touchLastSessionPending`，会话保存收敛到提交态。
+- 执行者：已在 `useCanvasInteraction` 内引入 rAF 合并（先覆盖 resize/drag/draw/erase 的 mousemove），并在 mouseup 前做 flush+commit 以确保最终态落地。
+- 执行者：已将图层面板层级构建改为一次性索引（`parentId -> children[]`），并用结构字段比较跳过纯几何更新触发的面板重渲染。
+- 执行者：已为撤销历史加入 `MAX_HISTORY` 上限（当前为 200），提交态写入历史时自动丢弃最旧快照，避免内存随使用时长无限增长。
+- 执行者：已为 `getElementBounds` 增加基于 `allElements` 引用的索引与缓存（`WeakMap<Element[], ...>`），减少同一次渲染/同一批元素下的重复 bounds 计算与 group 递归 `filter` 成本。
+- 执行者：已将拖拽吸附的静态对齐线在拖拽开始时预计算并排序，mousemove 期间用二分查找找最近线，避免每帧 `O(n^2)` 的嵌套遍历。
+- 执行者：已将拖拽吸附相关的 bounds 计算统一改为复用 `getElementBounds(el, allElements)` 的缓存索引，减少重复几何计算。
+- 执行者：已为选框与套索选择接入网格空间索引（按 `cellSize` 分桶），将 mouseup 的全量遍历收敛为“候选集 → 精确判定”，并在开启 `BANANAPOD_DEBUG_PERF=1` 时输出 `[Perf][SpatialIndex]` 计数快照。
+- 执行者：已将橡皮擦命中接入空间索引（mouseMove 先取候选元素，再对 path 点集做距离判定），避免每帧对所有 path 全量扫描。
+- 执行者：已对图层面板接入虚拟化渲染（按行高窗口化渲染可视区 + overscan），避免元素数过大导致面板 DOM 规模失控。
+- 执行者：已将 lastSession 的 JSON 序列化迁移到 Web Worker（仅 localStorage 回退路径），并在 `[Perf][LastSession]` 中补充 `backend/stringifyMs/stringifyVia` 用于定位同步长任务来源。
+- 执行者：已用 MCP 完成会话保存链路验证：强制走 localStorage 回退后，触发保存时 Console 出现 `[Perf][LastSession]` 且 `stringifyVia=worker`；刷新后仍可恢复到最后一次提交态。
+- 执行者：已将图片 `data:` URL → Blob 的转换优先改为 `fetch(dataUrl).blob()`（失败时回退主线程解码），并在 `[Perf][LastSession]` 中补充 `imgDataUrlToBlobCount/imgDataUrlToBlobMs/imgDataUrlToBlobVia` 用于识别图片转换是否成为长任务来源。
+- 执行者：已将会话恢复时 `image:<hash>` 的膨胀逻辑改为优先生成 `blob:` ObjectURL（带 LRU 缓存与 revoke），并在后续保存时通过 `blobUrl -> hash` 映射避免重复 fetch/rehash。
+- 执行者：已新增 History v2（增量 patch）实现，默认关闭；已通过 `npm run lint` 与 `npx tsc -p tsconfig.json --noEmit` 与 `npm run build`。
+- 启用方式：浏览器控制台执行 `localStorage.setItem('BANANAPOD_DEBUG_PERF','1')` 后刷新页面。
+- 启用 History v2：浏览器控制台执行 `localStorage.setItem('BANANAPOD_HISTORY_DIFF','1')` 后刷新页面。
+- 输出位置：Console 中查看 `[Perf][BoardActions]` 与 `[Perf][LastSession]` 的计数与状态快照。
 
 ### 验证指引（人工）
 
-- 代理 A：模型下拉仅有 2 项，显示 `Standard_A`/`Professional_A`，实际请求模型分别为 `nano-banana`/`nano-banana-2`。
-- 代理 B：模型下拉仅有 2 项，显示 `Standard_B`/`Professional_B`，实际请求模型分别为 `nano-banana`/`nano-banana-pro`。
+- 构造压力场景：导入 50 张图片 + 150 个图形/文本元素，开启图层面板，连续拖动/缩放/绘制各 10 秒。
+- 验证撤销/重做：对拖动、缩放、绘制分别执行 5 次操作后撤销/重做，确认每次操作对应一次记录且状态正确。
+- 验证会话恢复：执行若干操作后刷新页面，确认恢复到最后一次“提交态”。
 
 ### 请求帮助
 
-- 若模型列表由远端配置/环境变量注入且不可静态收敛，需要提供配置入口位置与发布流程说明，以便规划迁移与灰度策略。
-- 当前 GitHub 推送阻塞：本机到 `github.com:443` 无法建立 TCP（`Test-NetConnection github.com -Port 443` 失败），已切换到 SSH 推送（`origin=git@github.com:cction/Vivid_Arch.git`）。但 `ssh -T git@github.com` 返回 `Permission denied (publickey)`，需要将本机公钥添加到 GitHub 账号的 SSH keys 后重试推送。
+- 若线上/目标环境有明确 FPS 或性能基线（设备、浏览器版本、典型素材大小），请提供基线数据以便制定更精确的验收阈值。
+- 若目标部署环境存在 IndexedDB 不可用/被禁用的情况（例如隐私模式/内嵌 WebView 限制），请明确说明，以便优先优化 localStorage 回退路径的数据量与保存策略。
 
-## API 调用排查与修复（WHATAI/GRSAI）
+## 历史归档（过时）
 
-### 背景和动机
-
-- 现状：WHATAI 生图在选择 `2K/4K` 时仍返回 `1K`；GRSAI 在 `pro` 编辑模式下疑似参考图未生效（需要确认输入图是否被正确传入/上传）。
-- 目标：让 UI 的 `2K/4K` 选择在支持的模型与端点上真实生效；确保 GRSAI 编辑/生图时参考图输入稳定可用，并能用调试信息快速判断“输入图是否成功传入”。
-
-### 关键挑战和分析
-
-- WHATAI：当前生图函数未把 `imageSize` 传入请求体，导致 `2K/4K` 选择无效。
-- GRSAI：当前编辑链路会把画布中的图片 `href` 直接当作 Base64 拼进 `data:image/...;base64,<...>`；当 `href` 为 `blob:` 或 `image:`（存储引用）时会构造出无效的 `data:` URL，表现为“参考图没上传/没生效”。
-- 可观测性：需要在不泄露敏感信息的前提下输出关键调试字段（模型名、端点、imageSize、urls 形态、图片尺寸探测结果、状态码与返回片段），避免“看起来成功但实际传错”。
-
-### 成功标准
-
-- WHATAI：当模型为 `nano-banana-2` 且选择 `2K/4K` 时，请求侧能携带对应尺寸参数，返回图片尺寸与期望等级一致（或由服务端返回明确错误提示）。
-- GRSAI：编辑/生图在存在参考图时，发送给接口的 `urls` 均为 `https://...` 或 `data:image/...;base64,...`，不会出现 `...base64,blob:` 或其它无效内容；失败时能在错误提示与调试输出中定位到具体原因（传参/鉴权/内容违规/超时）。
-- 回归：WHATAI 与 GRSAI 两条链路在无参考图、单参考图、多参考图三种情况下均可出图；不影响现有视频生成与局部重绘（mask）逻辑。
-
-### 高层任务拆分
-
-1. 复盘 UI 到请求的参数映射
-   - 确认 `imageSize` 仅在 `nano-banana-2`/`nano-banana-pro` 时可选，其他模型强制回退到 `1K`。
-   - 明确“生图/编辑”分别走哪些端点与参数格式（JSON vs FormData）。
-
-2. 修复 WHATAI 生图 `imageSize` 未生效
-   - 对 `nano-banana`/`nano-banana-2` 生图优先使用 `POST /v1/images/generations`，并在 `nano-banana-2` 时透传 `image_size`。
-   - 其他模型不走兼容分支，直接提示“不支持该生图协议”，避免参数不一致导致误判。
-
-3. 修复 GRSAI 参考图输入不稳定（blob/image 引用归一化）
-   - 在进入 `grsaiService.editImage/generateImageFromText` 前，将所有输入图 `href` 归一化为可用的 `dataUrl`（或可直接访问的 `https://...`）。
-   - 覆盖 `blob:`、`data:`、`image:` 三类来源，确保最终 `urls` 符合 GRSAI 文档要求。
-
-4. 增强调试信息与错误提示（不输出任何密钥）
-   - 请求侧输出：provider、model、endpoints、imageSize、urlsCount、urlsKind 统计（`data/https/blob/other`）与首段预览截断。
-   - 响应侧输出：状态码、任务 id、轮询次数、失败原因字段（`error/failure_reason`）。
-
-5. 验证与回归
-   - 用 DevTools Network 检查请求 payload：WHATAI 是否带 `image_size`；GRSAI `urls` 是否为合法形态。
-   - 用前端尺寸探测验证出图尺寸（读取 `img.naturalWidth/naturalHeight`），并记录在调试输出中。
-   - 运行 `npm run lint`、`npx tsc --noEmit`、`npm run build` 确保无回归。
-
-### 项目状态看板（API 调用修复）
-
-#### 已完成
-- [x] 修复 WHATAI 生图 `imageSize` 透传与端点选择
-- [x] 修复 GRSAI 参考图输入归一化（支持 blob/image/data）
-
-#### 已完成
-- [x] 增强请求/响应调试信息并回归验证
-- [x] WHATAI 生图仅走 generations（透传选中模型），并输出实际宽高调试信息
+- 2025-12 之前的 scratchpad 主要记录“模型选项收敛、PromptBar 展示名映射、API 调用修复”等事项；与本轮“画布交互性能优化”目标不同，已归档。

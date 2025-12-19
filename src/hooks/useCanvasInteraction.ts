@@ -1,12 +1,36 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type React from 'react';
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import type { Board, Element, ImageElement, ShapeElement, TextElement, VideoElement, PathElement, ArrowElement, LineElement, Point, Tool, WheelAction } from '@/types';
 import { getElementBounds } from '@/utils/canvas';
+import { queryElementsInRect, queryElementsNearPoint } from '@/utils/spatialIndex';
 
 type Rect = { x: number; y: number; width: number; height: number };
 type Guide = { type: 'v' | 'h'; position: number; start: number; end: number };
 const SNAP_THRESHOLD = 5;
+
+const getPolygonBounds = (polygon: Point[]): Rect => {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of polygon) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return { x: 0, y: 0, width: 0, height: 0 };
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+};
+
+const isPointInPolygon = (point: Point, polygon: Point[]) => {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    const intersect = ((yi > point.y) !== (yj > point.y)) && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
 
 type ResizeStartInfo = { originalElement: ImageElement | ShapeElement | TextElement | VideoElement; startCanvasPoint: Point; handle: string; shiftKey: boolean } | null;
 type CropStartInfo = { originalCropBox: Rect; startCanvasPoint: Point } | null;
@@ -73,6 +97,31 @@ function parseRatio(r: string | null): number | null {
   return a / b;
 }
 
+function uniqueSorted(values: number[]): number[] {
+  if (values.length === 0) return [];
+  const sorted = [...values].sort((a, b) => a - b);
+  const out: number[] = [];
+  for (const v of sorted) {
+    if (out.length === 0 || out[out.length - 1] !== v) out.push(v);
+  }
+  return out;
+}
+
+function findNearestValue(sorted: number[], target: number): number | null {
+  if (sorted.length === 0) return null;
+  let lo = 0;
+  let hi = sorted.length - 1;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (sorted[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  const right = sorted[lo];
+  if (lo === 0) return right;
+  const left = sorted[lo - 1];
+  return Math.abs(left - target) <= Math.abs(right - target) ? left : right;
+}
+
 export function useCanvasInteraction(deps: Deps) {
   const {
     svgRef, elements, elementsRef, activeTool, setActiveTool, drawingOptions, selectedElementIds, setSelectedElementIds,
@@ -82,6 +131,73 @@ export function useCanvasInteraction(deps: Deps) {
     setAlignmentGuides, updateActiveBoardSilent, panRafRef, panLastPointRef, wheelRafRef, wheelLastEventRef, setPanRaf, setPanLastPoint, setWheelRaf, setWheelLastEvent,
     croppingState, setCroppingState, cropAspectRatio, wheelAction, zoom, panOffset, setContextMenu, contextMenu, generateId,
   } = deps;
+
+  const elementsUpdateRafRef = useRef<number | null>(null);
+  const pendingElementsUpdaterRef = useRef<((prev: Element[]) => Element[]) | null>(null);
+  const guidesUpdateRafRef = useRef<number | null>(null);
+  const pendingGuidesRef = useRef<Guide[] | null>(null);
+  const dragStaticSnapLinesRef = useRef<{ v: number[]; h: number[] } | null>(null);
+
+  const scheduleElementsUpdate = useCallback((updater: (prev: Element[]) => Element[]) => {
+    const pending = pendingElementsUpdaterRef.current;
+    pendingElementsUpdaterRef.current = pending ? (prev => updater(pending(prev))) : updater;
+    if (elementsUpdateRafRef.current != null) return;
+    elementsUpdateRafRef.current = requestAnimationFrame(() => {
+      elementsUpdateRafRef.current = null;
+      const u = pendingElementsUpdaterRef.current;
+      pendingElementsUpdaterRef.current = null;
+      if (!u) return;
+      setElements(u, false);
+    });
+  }, [setElements]);
+
+  const takePendingElementsUpdater = useCallback(() => {
+    if (elementsUpdateRafRef.current != null) {
+      cancelAnimationFrame(elementsUpdateRafRef.current);
+      elementsUpdateRafRef.current = null;
+    }
+    const u = pendingElementsUpdaterRef.current;
+    pendingElementsUpdaterRef.current = null;
+    return u;
+  }, []);
+
+  const scheduleGuidesUpdate = useCallback((guides: Guide[]) => {
+    pendingGuidesRef.current = guides;
+    if (guidesUpdateRafRef.current != null) return;
+    guidesUpdateRafRef.current = requestAnimationFrame(() => {
+      guidesUpdateRafRef.current = null;
+      const g = pendingGuidesRef.current;
+      pendingGuidesRef.current = null;
+      if (!g) return;
+      setAlignmentGuides(g);
+    });
+  }, [setAlignmentGuides]);
+
+  const flushGuidesUpdate = useCallback(() => {
+    if (guidesUpdateRafRef.current != null) {
+      cancelAnimationFrame(guidesUpdateRafRef.current);
+      guidesUpdateRafRef.current = null;
+    }
+    const g = pendingGuidesRef.current;
+    pendingGuidesRef.current = null;
+    if (!g) return;
+    setAlignmentGuides(g);
+  }, [setAlignmentGuides]);
+
+  useEffect(() => {
+    return () => {
+      if (elementsUpdateRafRef.current != null) {
+        cancelAnimationFrame(elementsUpdateRafRef.current);
+        elementsUpdateRafRef.current = null;
+      }
+      pendingElementsUpdaterRef.current = null;
+      if (guidesUpdateRafRef.current != null) {
+        cancelAnimationFrame(guidesUpdateRafRef.current);
+        guidesUpdateRafRef.current = null;
+      }
+      pendingGuidesRef.current = null;
+    };
+  }, []);
 
   const getCanvasPoint = useCallback((screenX: number, screenY: number): Point => {
     if (!svgRef.current) return { x: 0, y: 0 };
@@ -182,6 +298,18 @@ export function useCanvasInteraction(deps: Deps) {
         const initialPositions = new Map<string, { x: number; y: number } | Point[]>();
         elementsRef.current.forEach(el => { if (idsToDrag.has(el.id)) { if (el.type !== 'path' && el.type !== 'arrow' && el.type !== 'line') { initialPositions.set(el.id, { x: el.x, y: el.y }); } else { initialPositions.set(el.id, el.points); } } });
         setDragStartElementPositions(initialPositions);
+
+        const snapV: number[] = [];
+        const snapH: number[] = [];
+        const getSnapPoints = (bounds: Rect) => ({ v: [bounds.x, bounds.x + bounds.width / 2, bounds.x + bounds.width], h: [bounds.y, bounds.y + bounds.height / 2, bounds.y + bounds.height] });
+        elementsRef.current.forEach(el => {
+          if (idsToDrag.has(el.id)) return;
+          const bounds = getElementBounds(el, elementsRef.current);
+          const pts = getSnapPoints(bounds);
+          snapV.push(...pts.v);
+          snapH.push(...pts.h);
+        });
+        dragStaticSnapLinesRef.current = { v: uniqueSorted(snapV), h: uniqueSorted(snapH) };
       } else {
         setSelectedElementIds([]);
         setInteractionMode('selectBox');
@@ -197,8 +325,20 @@ export function useCanvasInteraction(deps: Deps) {
     if (interactionMode.current === 'erase') {
       const eraseRadius = drawingOptions.strokeWidth / zoom;
       const idsToDelete = new Set<string>();
-      elements.forEach(el => { if (el.type === 'path') { for (let i = 0; i < el.points.length - 1; i++) { const distance = Math.hypot(point.x - el.points[i].x, point.y - el.points[i].y); if (distance < eraseRadius) { idsToDelete.add(el.id); return; } } } });
-      if (idsToDelete.size > 0) { setElements(prev => prev.filter(el => !idsToDelete.has(el.id)), false); }
+      const candidates = queryElementsNearPoint(elementsRef.current, point, eraseRadius);
+      const r2 = eraseRadius * eraseRadius;
+      candidates.forEach(el => {
+        if (el.type !== 'path') return;
+        for (let i = 0; i < el.points.length - 1; i++) {
+          const dx = point.x - el.points[i].x;
+          const dy = point.y - el.points[i].y;
+          if ((dx * dx + dy * dy) < r2) {
+            idsToDelete.add(el.id);
+            return;
+          }
+        }
+      });
+      if (idsToDelete.size > 0) { scheduleElementsUpdate(prev => prev.filter(el => !idsToDelete.has(el.id))); }
       return;
     }
     if (interactionMode.current.startsWith('resize-')) {
@@ -218,7 +358,7 @@ export function useCanvasInteraction(deps: Deps) {
       }
       if (width < 1) { width = 1; x = originalElement.x + originalElement.width - 1; }
       if (height < 1) { height = 1; y = originalElement.y + originalElement.height - 1; }
-      setElements(prev => prev.map(el => (el.id === originalElement.id ? { ...el, x, y, width, height } : el)), false);
+      scheduleElementsUpdate(prev => prev.map(el => (el.id === originalElement.id ? { ...el, x, y, width, height } : el)));
       return;
     }
     if (interactionMode.current === 'crop-move') {
@@ -281,13 +421,13 @@ export function useCanvasInteraction(deps: Deps) {
         break;
       }
       case 'draw': {
-        if (currentDrawingElementId.current) { setElements(prev => prev.map(el => (el.id === currentDrawingElementId.current && el.type === 'path') ? { ...el, points: [...el.points, point] } : el), false); }
+        if (currentDrawingElementId.current) { scheduleElementsUpdate(prev => prev.map(el => (el.id === currentDrawingElementId.current && el.type === 'path') ? { ...el, points: [...el.points, point] } : el)); }
         break;
       }
       case 'lasso': { setLassoPath(prev => (prev ? [...prev, point] : [point])); break; }
       case 'drawShape': {
         if (currentDrawingElementId.current) {
-          setElements(prev => prev.map(el => {
+          scheduleElementsUpdate(prev => prev.map(el => {
             if (el.id === currentDrawingElementId.current && el.type === 'shape') {
               let newWidth = Math.abs(point.x - startCanvasPoint.x);
               let newHeight = Math.abs(point.y - startCanvasPoint.y);
@@ -302,47 +442,64 @@ export function useCanvasInteraction(deps: Deps) {
               return { ...el, x: newX, y: newY, width: newWidth, height: newHeight };
             }
             return el;
-          }), false);
+          }));
         }
         break;
       }
       case 'drawArrow': {
-        if (currentDrawingElementId.current) { setElements(prev => prev.map(el => (el.id === currentDrawingElementId.current && el.type === 'arrow') ? { ...el, points: [el.points[0], point] } : el), false); }
+        if (currentDrawingElementId.current) { scheduleElementsUpdate(prev => prev.map(el => (el.id === currentDrawingElementId.current && el.type === 'arrow') ? { ...el, points: [el.points[0], point] } : el)); }
         break;
       }
       case 'drawLine': {
-        if (currentDrawingElementId.current) { setElements(prev => prev.map(el => (el.id === currentDrawingElementId.current && el.type === 'line') ? { ...el, points: [el.points[0], point] } : el), false); }
+        if (currentDrawingElementId.current) { scheduleElementsUpdate(prev => prev.map(el => (el.id === currentDrawingElementId.current && el.type === 'line') ? { ...el, points: [el.points[0], point] } : el)); }
         break;
       }
       case 'dragElements': {
         const dx = point.x - startCanvasPoint.x; const dy = point.y - startCanvasPoint.y;
         const movingElementIds = Array.from(dragStartElementPositions.current.keys());
         const movingElements = elements.filter(el => movingElementIds.includes(el.id));
-        const otherElements = elements.filter(el => !movingElementIds.includes(el.id));
         const snapThresholdCanvas = SNAP_THRESHOLD / zoom;
+        const baseDx = dx; const baseDy = dy;
         let finalDx = dx; let finalDy = dy; let activeGuides: Guide[] = [];
         const getSnapPoints = (bounds: Rect) => ({ v: [bounds.x, bounds.x + bounds.width / 2, bounds.x + bounds.width], h: [bounds.y, bounds.y + bounds.height / 2, bounds.y + bounds.height] });
-        const staticSnapPoints = { v: new Set<number>(), h: new Set<number>() };
-        otherElements.forEach(el => { const bounds = getElementBounds(el); getSnapPoints(bounds).v.forEach(p => staticSnapPoints.v.add(p)); getSnapPoints(bounds).h.forEach(p => staticSnapPoints.h.add(p)); });
+        const staticLines = dragStaticSnapLinesRef.current;
+        const staticV = staticLines?.v ?? [];
+        const staticH = staticLines?.h ?? [];
         let bestSnapX = { dist: Infinity, val: finalDx, guide: null as Guide | null };
         let bestSnapY = { dist: Infinity, val: finalDy, guide: null as Guide | null };
         movingElements.forEach(movingEl => {
           const startPos = dragStartElementPositions.current.get(movingEl.id); if (!startPos) return;
           let movingBounds: Rect;
           if (movingEl.type !== 'path' && movingEl.type !== 'arrow' && movingEl.type !== 'line') {
-            movingBounds = getElementBounds({ ...movingEl, x: (startPos as Point).x, y: (startPos as Point).y });
+            movingBounds = getElementBounds({ ...movingEl, x: (startPos as Point).x, y: (startPos as Point).y }, elementsRef.current);
           } else {
-            if (movingEl.type === 'arrow' || movingEl.type === 'line') movingBounds = getElementBounds({ ...movingEl, points: startPos as [Point, Point] });
-            else movingBounds = getElementBounds({ ...movingEl, points: startPos as Point[] });
+            if (movingEl.type === 'arrow' || movingEl.type === 'line') movingBounds = getElementBounds({ ...movingEl, points: startPos as [Point, Point] }, elementsRef.current);
+            else movingBounds = getElementBounds({ ...movingEl, points: startPos as Point[] }, elementsRef.current);
           }
           const movingSnapPoints = getSnapPoints(movingBounds);
-          movingSnapPoints.v.forEach(p => { staticSnapPoints.v.forEach(staticP => { const dist = Math.abs((p + finalDx) - staticP); if (dist < snapThresholdCanvas && dist < bestSnapX.dist) { bestSnapX = { dist, val: staticP - p, guide: { type: 'v', position: staticP, start: movingBounds.y, end: movingBounds.y + movingBounds.height } }; } }); });
-          movingSnapPoints.h.forEach(p => { staticSnapPoints.h.forEach(staticP => { const dist = Math.abs((p + finalDy) - staticP); if (dist < snapThresholdCanvas && dist < bestSnapY.dist) { bestSnapY = { dist, val: staticP - p, guide: { type: 'h', position: staticP, start: movingBounds.x, end: movingBounds.x + movingBounds.width } }; } }); });
+          movingSnapPoints.v.forEach(p => {
+            const target = p + baseDx;
+            const nearest = findNearestValue(staticV, target);
+            if (nearest == null) return;
+            const dist = Math.abs(nearest - target);
+            if (dist < snapThresholdCanvas && dist < bestSnapX.dist) {
+              bestSnapX = { dist, val: nearest - p, guide: { type: 'v', position: nearest, start: movingBounds.y, end: movingBounds.y + movingBounds.height } };
+            }
+          });
+          movingSnapPoints.h.forEach(p => {
+            const target = p + baseDy;
+            const nearest = findNearestValue(staticH, target);
+            if (nearest == null) return;
+            const dist = Math.abs(nearest - target);
+            if (dist < snapThresholdCanvas && dist < bestSnapY.dist) {
+              bestSnapY = { dist, val: nearest - p, guide: { type: 'h', position: nearest, start: movingBounds.x, end: movingBounds.x + movingBounds.width } };
+            }
+          });
         });
         if (bestSnapX.guide) { finalDx = bestSnapX.val; activeGuides.push(bestSnapX.guide); }
         if (bestSnapY.guide) { finalDy = bestSnapY.val; activeGuides.push(bestSnapY.guide); }
-        setAlignmentGuides(activeGuides);
-        setElements(prev => prev.map(el => {
+        scheduleGuidesUpdate(activeGuides);
+        scheduleElementsUpdate(prev => prev.map(el => {
           if (movingElementIds.includes(el.id)) {
             const startPos = dragStartElementPositions.current.get(el.id); if (!startPos) return el;
             if (el.type !== 'path' && el.type !== 'arrow' && el.type !== 'line') return { ...el, x: (startPos as Point).x + finalDx, y: (startPos as Point).y + finalDy };
@@ -350,7 +507,7 @@ export function useCanvasInteraction(deps: Deps) {
             else { const startPoints = startPos as [Point, Point]; const newPoints: [Point, Point] = [{ x: startPoints[0].x + finalDx, y: startPoints[0].y + finalDy }, { x: startPoints[1].x + finalDx, y: startPoints[1].y + finalDy }]; return { ...el, points: newPoints }; }
           }
           return el;
-        }), false);
+        }));
         break;
       }
       case 'selectBox': { const newX = Math.min(point.x, startCanvasPoint.x); const newY = Math.min(point.y, startCanvasPoint.y); const newWidth = Math.abs(point.x - startCanvasPoint.x); const newHeight = Math.abs(point.y - startCanvasPoint.y); setSelectionBox({ x: newX, y: newY, width: newWidth, height: newHeight }); break; }
@@ -361,27 +518,31 @@ export function useCanvasInteraction(deps: Deps) {
     if (interactionMode.current) {
       if (interactionMode.current === 'selectBox' && selectionBox) {
         const selectedIds: string[] = [];
-        const { x: sx, y: sy, width: sw, height: sh } = selectionBox;
-        elements.forEach(element => {
-          const bounds = getElementBounds(element, elements);
-          const { x: ex, y: ey, width: ew, height: eh } = bounds;
-          if (sx < ex + ew && sx + sw > ex && sy < ey + eh && sy + sh > ey) {
-            const selectable = getSelectableElement(element.id, elements);
-            if (selectable) selectedIds.push(selectable.id);
-          }
+        const hits = queryElementsInRect(elements, selectionBox);
+        hits.forEach(element => {
+          const selectable = getSelectableElement(element.id, elements);
+          if (selectable) selectedIds.push(selectable.id);
         });
         setSelectedElementIds([...new Set(selectedIds)]);
       } else if (interactionMode.current === 'lasso' && lassoPath && lassoPath.length > 2) {
-        const selectedIds = elements.filter(el => {
-          const bounds = getElementBounds(el, elements);
-          const center: Point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
-          let inside = false; const polygon = lassoPath; for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) { const xi = polygon[i].x, yi = polygon[i].y; const xj = polygon[j].x, yj = polygon[j].y; const intersect = ((yi > center.y) !== (yj > center.y)) && (center.x < (xj - xi) * (center.y - yi) / (yj - yi) + xi); if (intersect) inside = !inside; }
-          return inside;
-        }).map(el => getSelectableElement(el.id, elements)?.id).filter((id): id is string => !!id);
+        const polygon = lassoPath;
+        const polygonBounds = getPolygonBounds(polygon);
+        const candidates = queryElementsInRect(elements, polygonBounds);
+        const selectedIds = candidates
+          .filter(el => {
+            const bounds = getElementBounds(el, elements);
+            const center: Point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+            return isPointInPolygon(center, polygon);
+          })
+          .map(el => getSelectableElement(el.id, elements)?.id)
+          .filter((id): id is string => !!id);
         setSelectedElementIds(prev => [...new Set([...prev, ...selectedIds])]);
         setLassoPath(null);
       } else if (['draw', 'drawShape', 'drawArrow', 'drawLine', 'dragElements', 'erase'].some(prefix => interactionMode.current?.startsWith(prefix)) || interactionMode.current.startsWith('resize-')) {
-        commitAction(els => els);
+        flushGuidesUpdate();
+        const pending = takePendingElementsUpdater();
+        if (pending) commitAction(pending);
+        else commitAction(els => els);
       }
     }
     setInteractionMode(null);
@@ -392,6 +553,7 @@ export function useCanvasInteraction(deps: Deps) {
     setCropStartInfo(null);
     setAlignmentGuides([]);
     clearDragStartElementPositions();
+    dragStaticSnapLinesRef.current = null;
   };
 
   useEffect(() => {

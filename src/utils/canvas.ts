@@ -1,6 +1,33 @@
 import type { Element, ImageElement, VideoElement } from '@/types';
 
-export const getElementBounds = (element: Element, allElements: Element[] = []): { x: number; y: number; width: number; height: number } => {
+type Rect = { x: number; y: number; width: number; height: number };
+
+type ElementsIndex = {
+  byId: Map<string, Element>;
+  childrenByParentId: Map<string, Element[]>;
+  boundsById: Map<string, Rect>;
+};
+
+const elementsIndexCache = new WeakMap<Element[], ElementsIndex>();
+
+const getElementsIndex = (elements: Element[]): ElementsIndex => {
+  const existing = elementsIndexCache.get(elements);
+  if (existing) return existing;
+  const byId = new Map<string, Element>();
+  const childrenByParentId = new Map<string, Element[]>();
+  for (const el of elements) {
+    byId.set(el.id, el);
+    const key = el.parentId ?? '';
+    const list = childrenByParentId.get(key);
+    if (list) list.push(el);
+    else childrenByParentId.set(key, [el]);
+  }
+  const created: ElementsIndex = { byId, childrenByParentId, boundsById: new Map() };
+  elementsIndexCache.set(elements, created);
+  return created;
+};
+
+const getElementBoundsUncached = (element: Element, allElements: Element[]): Rect => {
   if (element.type === 'group') {
     const children = allElements.filter(el => el.parentId === element.id);
     if (children.length === 0) {
@@ -8,7 +35,7 @@ export const getElementBounds = (element: Element, allElements: Element[] = []):
     }
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     children.forEach(child => {
-      const bounds = getElementBounds(child, allElements);
+      const bounds = getElementBoundsUncached(child, allElements);
       minX = Math.min(minX, bounds.x);
       minY = Math.min(minY, bounds.y);
       maxX = Math.max(maxX, bounds.x + bounds.width);
@@ -38,6 +65,48 @@ export const getElementBounds = (element: Element, allElements: Element[] = []):
     maxY = Math.max(maxY, p.y);
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+};
+
+export const getElementBounds = (element: Element, allElements: Element[] = []): Rect => {
+  if (allElements.length === 0) return getElementBoundsUncached(element, allElements);
+
+  const idx = getElementsIndex(allElements);
+  if (idx.byId.get(element.id) !== element) return getElementBoundsUncached(element, allElements);
+
+  const visiting = new Set<string>();
+
+  const compute = (el: Element): Rect => {
+    const cached = idx.boundsById.get(el.id);
+    if (cached) return cached;
+    if (visiting.has(el.id)) return getElementBoundsUncached(el, allElements);
+    visiting.add(el.id);
+
+    let result: Rect;
+    if (el.type === 'group') {
+      const children = idx.childrenByParentId.get(el.id) ?? [];
+      if (children.length === 0) {
+        result = { x: el.x, y: el.y, width: el.width, height: el.height };
+      } else {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const child of children) {
+          const b = compute(child);
+          minX = Math.min(minX, b.x);
+          minY = Math.min(minY, b.y);
+          maxX = Math.max(maxX, b.x + b.width);
+          maxY = Math.max(maxY, b.y + b.height);
+        }
+        result = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+      }
+    } else {
+      result = getElementBoundsUncached(el, allElements);
+    }
+
+    visiting.delete(el.id);
+    idx.boundsById.set(el.id, result);
+    return result;
+  };
+
+  return compute(element);
 };
 
 export const rasterizeElement = (element: Exclude<Element, ImageElement | VideoElement>): Promise<{ href: string; mimeType: 'image/png' }> => {
