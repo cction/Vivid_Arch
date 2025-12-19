@@ -197,9 +197,27 @@
 
 ## v1.2.3 (2025-12-19)
 
-- perf(board-history): 引入 History v2 增量 patch 结构，支持按需开启“增量 diff”记录模式，降低频繁撤销/重做场景下的内存与序列化开销（默认仍保留 v1 快照以兼容旧会话）
-- perf(board-interaction): 将画布交互期间的中间态更新改为“transient 更新”，仅在提交态写入历史与会话，显著减少拖拽/缩放/绘制时的长任务次数
-- perf(layer-panel): 为图层面板引入索引与虚拟化渲染，降低大量元素场景下的重排/重绘成本
-- perf(spatial-index): 为选框/套索/橡皮擦等操作接入空间索引，替代全量遍历命中测试，在高元素数量下保持可接受的响应时间
-- fix(session-storage): 完成会话保存链路在 IndexedDB/localStorage/WebCrypto 不可用时的降级与调试输出，确保异常环境下仍能恢复最近 5 个图版
-- docs/release: 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.2.3`
+- 背景：
+  - 在包含大量图层与图片的画板上，高频拖拽/缩放/绘制时，撤销/重做、会话保存与图层面板渲染存在明显卡顿与长任务；History 全量快照与同步序列化开销随着使用时间线性增长。
+- 主要改动：
+  - perf(board-history): 引入 History v2 增量 patch 结构，按“新增/删除/更新 + 顺序 before/after”记录变更，可通过 `localStorage.setItem('BANANAPOD_HISTORY_DIFF','1')` 按需开启“增量 diff”模式；默认仍使用 v1 快照以保证旧会话兼容与回滚路径。
+  - perf(board-interaction): 将画布交互期间的中间态更新改为“transient 更新”，交互过程仅更新内存中的 elements，提交时一次性写入历史与会话，避免每一帧都复制大数组与触发持久化。
+  - perf(layer-panel): 为图层面板构建 `parentId -> children[]` 索引并接入虚拟化渲染，使其在上百甚至上千元素场景下仍维持较小的 DOM 与重排开销。
+  - perf(spatial-index): 为选框/套索/橡皮擦等命中测试操作引入空间索引（网格分桶），在大场景中用“候选集 + 精确判定”替代全量遍历，降低每次操作的时间复杂度。
+  - fix(session-storage): 完成会话保存链路在 IndexedDB/WebCrypto 不可用时的降级与调试输出，自动回退到 `localStorage` 与备用哈希实现，并仅持久化最近更新的 5 个图版的最终状态。
+  - debug(perf-logs): 在开启 `BANANAPOD_DEBUG_PERF=1` 时输出 `[Perf][BoardActions]` 与 `[Perf][LastSession]` 统计信息，包含 history 写入次数、会话保存次数与串行化耗时等，便于定位性能瓶颈。
+  - docs/release: 同步 `README.md`、`CHANGELOG.md`、`metadata.json` 与 `package.json` 到 `v1.2.3`。
+
+验证说明：
+- 命令验证：
+  - 运行 `npm run lint`，确认无新的 Lint 错误。
+  - 运行 `npx tsc --noEmit`，确认类型检查通过（在当前环境中可选执行，用于 CI 或本地严格校验）。
+  - 运行 `npm run build`，确认生产构建成功，无新增报错。
+- 性能与交互验证：
+  - 构造压力场景：导入约 50 张图片与 150 个图形/文本元素，打开图层面板，连续进行拖拽、缩放与绘制各 10 秒。
+  - 预期：交互过程中主观无明显卡顿或明显掉帧，DevTools Performance 中长任务数量与单次耗时较旧版本明显下降。
+  - 在上述场景下，开启 `localStorage.setItem('BANANAPOD_DEBUG_PERF','1')` 并刷新页面，观察 Console 中 `[Perf][BoardActions]` 与 `[Perf][LastSession]` 日志，history 写入应按“提交次数”而非“帧数”增长，会话保存次数显著减少。
+  - 手动执行多次撤销/重做，确认 History v1/v2 下撤销链条行为一致（一次拖拽/缩放/绘制对应一次历史记录）。
+- 会话恢复与兼容性验证：
+  - 新建 ≥6 个图版并分别编辑，等待保存完成后刷新页面：仅最近更新的 5 个图版被恢复到最后一次提交态。
+  - 在禁用 IndexedDB 或 WebCrypto 的环境中（如特定浏览器设置/隐私模式），执行绘制与刷新：应自动回退到 `localStorage` 保存/恢复，不出现 `indexedDB` 或 `crypto.subtle.digest` 相关错误。

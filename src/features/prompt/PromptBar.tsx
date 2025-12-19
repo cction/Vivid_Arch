@@ -103,6 +103,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     const blockCollapseUntilRef = useRef<number>(0);
     const [expandedWidth, setExpandedWidth] = useState<number>(580);
     const [maxTextareaHeight, setMaxTextareaHeight] = useState<number>(240);
+    const [isPromptCollapsed, setIsPromptCollapsed] = useState(false);
+    const [showCollapseButton, setShowCollapseButton] = useState(false);
 
     useEffect(() => {
         const apply = () => setExpandedWidth(computeExpandedWidth());
@@ -178,12 +180,21 @@ export const PromptBar: React.FC<PromptBarProps> = ({
         let raf = requestAnimationFrame(() => {
             el.style.height = 'auto';
             const sh = el.scrollHeight;
-            const mh = maxTextareaHeight;
+            // 5 lines threshold estimation:
+            // 3 lines = 104px (approx 24px/line + 32px padding)
+            // 5 lines = 5 * 24 + 32 = 152px
+            const threshold = 152;
+            const canCollapse = sh > threshold;
+            if (showCollapseButton !== canCollapse) {
+                setShowCollapseButton(canCollapse);
+            }
+
+            const mh = (isPromptCollapsed && canCollapse) ? 104 : maxTextareaHeight;
             el.style.height = `${Math.min(sh, mh)}px`;
             el.style.overflowY = sh > mh ? 'auto' : 'hidden';
         });
         return () => cancelAnimationFrame(raf);
-    }, [prompt, maxTextareaHeight]);
+    }, [prompt, maxTextareaHeight, isPromptCollapsed, showCollapseButton]);
 
     
 
@@ -246,6 +257,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
         const right = (prompt.trim() && !isLoading) ? space10 * 4.25 : space10 * 3.25;
         return `${space4}px ${Math.round(right)}px ${space4}px ${space3}px`;
     })();
+
+    const currentMaxHeight = isPromptCollapsed ? 104 : maxTextareaHeight;
 
     return (
         <div ref={containerRef} className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[100] flex justify-center">
@@ -368,6 +381,21 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
                                         </button>
                                     </div>
+                                    
+                                    {showCollapseButton && (
+                                    <IconButton
+                                        onClick={() => setIsPromptCollapsed(v => !v)}
+                                        title={language === 'ZH' ? (isPromptCollapsed ? '展开提示词框' : '折叠提示词框') : (isPromptCollapsed ? 'Expand prompt bar' : 'Collapse prompt bar')}
+                                        noHoverHighlight
+                                        className="pod-circle-button !w-5 !h-5 !p-0 !border-0 !bg-transparent hover:!bg-transparent text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 !-ml-1"
+                                    >
+                                        {isPromptCollapsed ? (
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                                        ) : (
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg>
+                                        )}
+                                    </IconButton>
+                                    )}
                                 </div>
 
                                 <Textarea
@@ -378,7 +406,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                     onKeyDown={handleKeyDown}
                                     placeholder={getPlaceholderText()}
                                     className="pod-prompt-textarea pod-scrollbar-y"
-                                    style={{ '--pod-textarea-padding': textareaPadding, maxHeight: `${maxTextareaHeight}px` } as React.CSSProperties}
+                                    style={{ '--pod-textarea-padding': textareaPadding, maxHeight: `${currentMaxHeight}px` } as React.CSSProperties}
                                     disabled={isLoading}
                                     autoFocus
                                 />
@@ -520,7 +548,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                     <button
                                         onClick={onGenerate}
                                         disabled={isLoading || !prompt.trim()}
-                                        className="h-9 px-5 rounded-xl font-bold text-sm transition-all active:scale-[0.98] shadow-lg shadow-black/20 whitespace-nowrap pod-generate-button flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="h-9 w-32 rounded-xl font-bold text-sm transition-all active:scale-[0.98] shadow-lg shadow-black/20 whitespace-nowrap pod-generate-button flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {isLoading ? (
                                             <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

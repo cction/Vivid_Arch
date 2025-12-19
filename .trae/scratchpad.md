@@ -111,6 +111,7 @@
 - [x] 序列化/持久化移出主线程（可选）（已落地：localStorage 回退路径 stringify → Worker；已验证：MCP 强制回退 + Perf 日志）
 - [x] 优化图片 dataURL 转 Blob 的主线程开销（可选）（已落地：data: 路径优先 fetch→blob；已验证：Perf 输出 imgDataUrlToBlob*）
 - [x] 历史增量 diff 方案设计与落地（可选）（已落地：History v2 patch；默认关闭）
+- [x] 增加 PromptBar 手动缩放按钮（解决长文本遮挡问题）
 
 ### 进行中
 
@@ -130,32 +131,19 @@
 
 ### 当前状态/进度跟踪
 
-- 执行者：已落地性能调试指标输出（每秒汇总），用于后续逐项优化前后对比。
-- 执行者：已停止交互过程中对 `history` 的复制/写入，中间态仅更新 `elements`，以降低拖动/绘制时的时间复杂度。
-- 执行者：已将高频元素更新切换为“transient 更新”，交互中不再触发 `touchLastSessionPending`，会话保存收敛到提交态。
-- 执行者：已在 `useCanvasInteraction` 内引入 rAF 合并（先覆盖 resize/drag/draw/erase 的 mousemove），并在 mouseup 前做 flush+commit 以确保最终态落地。
-- 执行者：已将图层面板层级构建改为一次性索引（`parentId -> children[]`），并用结构字段比较跳过纯几何更新触发的面板重渲染。
-- 执行者：已为撤销历史加入 `MAX_HISTORY` 上限（当前为 200），提交态写入历史时自动丢弃最旧快照，避免内存随使用时长无限增长。
-- 执行者：已为 `getElementBounds` 增加基于 `allElements` 引用的索引与缓存（`WeakMap<Element[], ...>`），减少同一次渲染/同一批元素下的重复 bounds 计算与 group 递归 `filter` 成本。
-- 执行者：已将拖拽吸附的静态对齐线在拖拽开始时预计算并排序，mousemove 期间用二分查找找最近线，避免每帧 `O(n^2)` 的嵌套遍历。
-- 执行者：已将拖拽吸附相关的 bounds 计算统一改为复用 `getElementBounds(el, allElements)` 的缓存索引，减少重复几何计算。
-- 执行者：已为选框与套索选择接入网格空间索引（按 `cellSize` 分桶），将 mouseup 的全量遍历收敛为“候选集 → 精确判定”，并在开启 `BANANAPOD_DEBUG_PERF=1` 时输出 `[Perf][SpatialIndex]` 计数快照。
-- 执行者：已将橡皮擦命中接入空间索引（mouseMove 先取候选元素，再对 path 点集做距离判定），避免每帧对所有 path 全量扫描。
-- 执行者：已对图层面板接入虚拟化渲染（按行高窗口化渲染可视区 + overscan），避免元素数过大导致面板 DOM 规模失控。
-- 执行者：已将 lastSession 的 JSON 序列化迁移到 Web Worker（仅 localStorage 回退路径），并在 `[Perf][LastSession]` 中补充 `backend/stringifyMs/stringifyVia` 用于定位同步长任务来源。
-- 执行者：已用 MCP 完成会话保存链路验证：强制走 localStorage 回退后，触发保存时 Console 出现 `[Perf][LastSession]` 且 `stringifyVia=worker`；刷新后仍可恢复到最后一次提交态。
-- 执行者：已将图片 `data:` URL → Blob 的转换优先改为 `fetch(dataUrl).blob()`（失败时回退主线程解码），并在 `[Perf][LastSession]` 中补充 `imgDataUrlToBlobCount/imgDataUrlToBlobMs/imgDataUrlToBlobVia` 用于识别图片转换是否成为长任务来源。
-- 执行者：已将会话恢复时 `image:<hash>` 的膨胀逻辑改为优先生成 `blob:` ObjectURL（带 LRU 缓存与 revoke），并在后续保存时通过 `blobUrl -> hash` 映射避免重复 fetch/rehash。
-- 执行者：已新增 History v2（增量 patch）实现，默认关闭；已通过 `npm run lint` 与 `npx tsc -p tsconfig.json --noEmit` 与 `npm run build`。
-- 启用方式：浏览器控制台执行 `localStorage.setItem('BANANAPOD_DEBUG_PERF','1')` 后刷新页面。
-- 启用 History v2：浏览器控制台执行 `localStorage.setItem('BANANAPOD_HISTORY_DIFF','1')` 后刷新页面。
-- 输出位置：Console 中查看 `[Perf][BoardActions]` 与 `[Perf][LastSession]` 的计数与状态快照。
+- 执行者：已增加 PromptBar 的手动折叠/展开功能。
+  - 新增 `isPromptCollapsed` 状态。
+  - 修改 `Textarea` 高度计算逻辑，支持折叠模式。
+  - 调整折叠高度为固定 104px（约 3 行文字高度 + 内边距）。
+  - 在 Top Controls 区域增加折叠/展开按钮。
+  - 验证：代码逻辑正确，UI 风格与现有按钮保持一致（IconButton + SVG）。
 
 ### 验证指引（人工）
 
 - 构造压力场景：导入 50 张图片 + 150 个图形/文本元素，开启图层面板，连续拖动/缩放/绘制各 10 秒。
 - 验证撤销/重做：对拖动、缩放、绘制分别执行 5 次操作后撤销/重做，确认每次操作对应一次记录且状态正确。
 - 验证会话恢复：执行若干操作后刷新页面，确认恢复到最后一次“提交态”。
+- 验证 PromptBar 缩放：输入长文本，点击折叠按钮，确认高度减小但文本保留；再次点击，确认恢复原高度。
 
 ### 请求帮助
 

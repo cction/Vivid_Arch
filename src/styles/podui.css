@@ -876,6 +876,11 @@
   gap: var(--space-2);
 }
 
+.pod-prompt-top-controls .pod-circle-button {
+  width: 32px;
+  height: 32px;
+}
+
 .pod-circle-button {
   width: 40px;
   height: 40px;
