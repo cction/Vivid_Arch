@@ -1,155 +1,109 @@
 # BananaPod 项目状态记录
 
-## UI 设计标准（PodUI v1.x）
+## 当前阶段：boardsStorage.ts 精简重构（规划者）
 
-### UI 设计标准草案
+### 背景和动机
 
-#### 设计令牌（Design Tokens）
+- 现状：`src/services/boardsStorage.ts` 已超过 700 行，集中了 IndexedDB/localStorage/Node 文件写入、图片 Blob 入库与哈希、对象 URL 缓存、JSON 序列化 Worker、会话恢复逻辑以及 Perf 统计等多种职责，阅读和演进成本较高。
+- 症结：文件内职责边界模糊，通用工具函数与 Board 会话业务强耦合，难以在不触碰核心逻辑的前提下做局部优化，也不利于后续复用（例如图片存储、JSON 大对象序列化）。
+- 目标：在保持对外行为与 API 不变（`saveLastSession/loadLastSession/touchLastSessionPending` 等导出函数语义不变）的前提下，将通用能力抽离为独立模块，使 `boardsStorage.ts` 聚焦“Board 会话读写 + 行为配置”，将文件体积控制在 200–300 行级别。
+- 范围：仅调整前端/Node 端会话存储相关代码的模块边界与文件结构，不改动 Canvas 交互层、不改历史存储语义、不改历史 v1/v2 行为开关，仅做“等价重构”。
 
-## 背景和动机
+### 关键挑战和分析（本阶段）
 
-- 现状：当前画布的“记录功能”（撤销/重做历史与会话保存）在操作频繁、图片与元素数量增多时，明显拖累交互流畅度；拖动画布与拖动元素均出现卡顿。
-- 目标：在不改变用户功能（撤销/重做、会话恢复、图层面板等）的前提下，大幅提升交互性能，确保拖动/缩放/绘制在大数据量下仍保持顺滑。
-- 范围：本轮仅聚焦“交互期间的状态更新/历史记录/面板渲染/会话保存”四类热点；不引入新框架，不进行大规模架构重写。
-- 部署适用性：本轮优化主要发生在前端运行时（浏览器主线程负载与渲染路径），因此无论是本地、静态托管还是带后端的服务器部署，只要前端版本升级上线均生效；服务端主要影响首次加载与接口响应，不是交互卡顿的主因。
+- 环境分支复杂：当前同时支持浏览器 IndexedDB、本地 localStorage 以及 Node/Electron 文件系统路径（`BANANAPOD_DATA_DIR`），抽离时需要确保三个环境的行为一致且可观测。
+- 图片管线耦合：图片哈希（`sha256`/`fnv1a64`）、`hrefToBlob`、`putImageBlob/getImageBlob` 与 Board 元素结构（`ImageElement.href`）紧密耦合，拆分时容易引入循环依赖或破坏去重策略。
+- JSON 序列化 Worker：`stringifyForStorage` 已经承担了性能关键路径的 off-main-thread 逻辑，抽离成通用模块时必须为 Perf 统计保留透传通道。
+- Perf 统计与业务状态交织：`perfCounters` 与 `lastSessionPending/IdlePending/Timer` 状态互相关联，简单抽离可能导致调试信息缺失或出现难以理解的日志。
+- 回归验证难度：会话保存涉及图片入库、Board 压缩、环境分支，稍有疏忽就会在极端场景（很多图片/切换环境）下出现恢复不完整或性能退化，需要规划清晰的验证步骤。
 
-## 关键挑战和分析
+### 本阶段高层任务拆分
 
-- 当前实现存在“高频写入历史/持久化”的放大效应：
-  - 交互过程（mousemove）使用“非提交更新”时仍会复制历史数组并覆写当前 history slot，导致复杂度随 `history.length` 增长。
-  - 交互过程仍触发会话保存调度，带来额外对象分配与 IO 排队。
-- 图层面板与其他面板可能在元素变化时被动重渲染，且存在 `O(n^2)` 级别的列表构建（递归过程中反复 filter）。
-- 在不破坏撤销/重做语义的情况下，需要将“交互中间态”与“最终提交态”拆开，避免中间态污染历史与持久化。
-- 需要建立可量化的验收指标与调试信息，避免“感觉更快”但没有证据或回归难排查。
-- 中长期瓶颈：即使解决历史/保存放大效应，元素数量继续上升时仍可能被“全量遍历（命中测试、对齐吸附、bounds 计算）”和“面板 DOM 规模”压垮，需要准备可扩展路径（索引、缓存、虚拟化、Worker）。
-- 后续主要风险点集中在“会话保存”的同步路径：
-  - 浏览器端优先走 IndexedDB（异步），但在 IndexedDB 不可用/失败时会回落到 localStorage，而 localStorage 的 `setItem` 为同步调用，可能造成明显主线程卡顿。
-  - `saveLastSession` 过程会对图片做去重落库（`sha256` + IndexedDB/文件写入），并对 payload 做 `JSON.stringify`（localStorage 与服务端写文件时），在压力数据量下仍可能成为长任务来源。
+1. 梳理 boardsStorage.ts 现有职责与依赖关系
+   - 列出当前文件中所有职责类别（环境判定、JSON Worker、图片存储、对象 URL 缓存、Board slim/inflate、会话保存、Perf 统计）。
+   - 标记哪些可抽象为“通用工具/服务”，哪些应保留为“Board 会话业务”。
 
-## 成功标准
+2. 设计 JSON 序列化工具模块边界
+   - 将 `stringifyWorkerUrl/stringifyWorker/stringifyReqId/stringifyPending/canUseStringifyWorker/getStringifyWorker/stringifyForStorage` 抽象为独立模块（如 `src/utils/jsonStorage.ts`）。
+   - 明确导出 API（至少包含 `stringifyForStorage`），并支持返回耗时与使用通道（Worker 或主线程）。
+   - 在 `boardsStorage.ts` 内改为引用该模块，同时保留 Perf 统计计数逻辑。
 
-- 交互顺滑：
-  - 在包含 200+ 元素（含 50+ 图片）的画布上，连续拖动 5 秒，主观无明显卡顿；开发者工具中长任务（Long Task）显著减少。
-  - 平移（中键/空格拖拽）与缩放（滚轮）在大数据量下保持稳定帧率，mousemove 期间状态更新频率不超过屏幕刷新率。
-- 性能指标（用于对比，不作为硬性门槛）：
-  - 拖动/缩放期间，`elements` 更新被合并到 rAF，避免“同一帧多次 setState”。
-  - 交互期间会话保存触发次数接近 0，提交态才触发保存与历史写入。
-  - 在压力场景下内存增长可控（history 不无限增长，图片/数据 URL 不重复拷贝）。
-- 功能不回归：
-  - 撤销/重做行为与当前一致：一次拖动/一次缩放/一次绘制对应一次可撤销记录（不把中间态写入历史）。
-  - 会话恢复：刷新后仍能恢复到“最后一次提交状态”（不要求恢复到拖动中间态）。
-  - 图层面板：层级展示与选择、可见/锁定、重命名、拖拽排序行为保持正确。
-- 可观测性：
-  - 在调试输出中能看到：history 长度、交互期间更新频率、会话保存触发次数（仅输出计数/类型，不输出敏感信息）。
+3. 设计图片 Blob 存储与哈希模块边界
+   - 把与 Board 结构无关的图片存储逻辑抽离到新模块（如 `src/services/imageStore.ts` 或 `src/utils/imageStore.ts`）：
+     - `fnv1a64Hex`
+     - `getBaseDir/ensureDirs/serverModules` 中与图片文件路径有关的部分
+     - `sha256Hex`
+     - `hrefToBlob/putImageBlob/getImageBlob`
+     - 对象 URL 缓存映射：`imageHashToObjectUrl/objectUrlToImageHash/maxObjectUrlCache/rememberObjectUrl/getKnownImageHashFromObjectUrl/getObjectUrlForImageHash`
+   - 设计模块导出 API，使 `boardsStorage.ts` 可以通过少量函数实现图片 slim/inflate，而不用关心具体存储细节。
 
-## 高层任务拆分
+4. 收敛 Board 会话存储核心逻辑
+   - 在拆出 JSON 工具与图片存储模块后，精简 `boardsStorage.ts`：
+     - 保留 `slimElement/slimBoardAsync/slimBoardForLocalStorage/inflateElementToDataUrl/pickRecentBoards` 等与 Board 直接相关的函数。
+     - 保留 `saveLastSessionToIndexedDB/saveLastSessionToLocalStorage/saveLastSession/loadLastSession` 等对外行为关键函数。
+     - 收拢环境判定逻辑，确保结构清晰（浏览器 vs Node/Electron）。
 
-0. 建立基线与调试指标（先做，贯穿全程）
-   - 增加轻量调试计数：交互期间每秒更新次数、每次提交 history 长度变化、会话保存触发次数。
-   - 建立固定压力场景与复测脚本（人工步骤即可），保证每步优化都能量化对比。
+5. 共用与整理辅助工具
+   - 统一 Blob → DataURL 实现：复用 `src/utils/fileUtils.ts`，在其中导出 `blobToDataUrl`，并在 `boardsStorage.ts` 与图片存储模块中统一使用。
+   - 评估是否可以部分复用 `src/utils/image.ts` 中的 base64/Blob 工具，避免逻辑重复。
 
-1. 修复历史记录写入放大效应（最高收益、最小改动）
-   - 交互过程中仅更新 `elements`（或临时 state），禁止复制/写入 `history`。
-   - 交互结束（mouseup / gesture end）一次性提交历史记录，保持撤销/重做语义不变。
+6. Perf 统计与日志路径梳理
+   - 明确 Perf 计数器与日志结构，保留现有字段并视情况增加“模块来源”标记。
+   - 把与 Perf 相关的状态和函数集中放在 `boardsStorage.ts` 顶部或单独区域，减少“业务逻辑中夹杂 Perf 细节”的视觉噪音。
+   - 确保新的 JSON/图片模块在需要时可以向 Perf 统计透传关键信息（例如 stringify 耗时、图片 Blob 处理次数）。
 
-2. 修复会话保存放大效应（高收益、低风险）
-   - “silent 更新”不触发 `touchLastSessionPending`；仅在“提交态”触发保存。
-   - 保存仍走 idle/debounce，兼容页面关闭/定时 flush，确保最终态可恢复。
+7. 回归验证与风险管理
+   - 设计一套简化但全面的回归用例：浏览器 + Node/Electron 场景，包含图片导入、Board 多次切换和删除。
+   - 对比重构前后的会话恢复正确性、Perf 日志与性能表现，如有差异在本文件记录原因和权衡。
 
-3. 将交互更新合并到 rAF（高收益、需要谨慎验证）
-   - resize/drag/draw/erase 等 mousemove 更新合并到 `requestAnimationFrame`，把高频事件压到 60fps 上限。
-   - 确保在 mouseup 前最后一帧必定落地，避免位置回跳或丢帧。
+### 项目状态看板（boardsStorage.ts 精简）
 
-4. 优化图层面板渲染（中高收益，元素多时质变）
-   - 将层级构建从“递归 filter”改为一次性索引（`parentId -> children[]`），并基于 memo 复用。
-   - 交互期间对面板采取“冻结/降频刷新”策略，避免面板跟随每帧变化重渲染。
+#### 已完成
 
-5. 控制历史增长与内存压力（中收益，稳定性增强）
-   - 增加 `maxHistory` 上限（如 100/200），超出时丢弃最旧记录；保证 `history.length` 不随使用时间无限增长。
-   - 对连续同类操作进行合并策略（如短时间内多次微调合并为一次记录，或按工具类型合并）。
+- [x] 明确 boardsStorage.ts 职责过载问题，并给出精简目标与范围（规划者视角）。
+- [x] 梳理 boardsStorage.ts 现有职责和依赖图（执行者已完成初步分析）。
+- [x] 设计并创建通用 JSON 序列化模块（包含 stringify Worker 实现与 API），并在 boardsStorage.ts 中接入。
+- [x] 设计并创建图片 Blob 存储与哈希模块（IndexedDB + Node 文件系统），并在 boardsStorage.ts 中接入（imageStore.ts）。
+- [x] 收敛并整理 boardsStorage.ts 内的 Board 会话逻辑（抽离 boardSession.ts，保留 slimElement/inflateElementToDataUrl 等与 Board 直接相关的函数）。
+- [x] 共用 blobToDataUrl 等辅助工具，删除重复代码（统一由 imageStore.ts 导出）。
+- [x] 初步整理 Perf 统计结构（移除图片专用 Perf 字段，保留会话相关计数与日志）。
 
-6. 降低“全量遍历”成本：bounds 缓存 + 空间索引（可选，元素继续增多时必须）
-   - 对 `getElementBounds` 等几何计算引入缓存（基于元素版本/变更标记），避免每帧重复算全量。
-   - 对命中测试/对齐吸附/选框选择引入简单空间索引（网格或四叉树），从 `O(n)` 扫描降到近似 `O(k)`。
+#### 进行中
 
-7. 面板与列表虚拟化（可选，DOM 规模过大时必做）
-   - 图层面板采用虚拟滚动，仅渲染可视区，避免数千节点导致布局/绘制卡顿。
-   - Board 列表、缩略图等同类组件按需引入虚拟化或延迟渲染。
+#### 待办
+- [ ] 按“回归验证与风险管理”小节执行浏览器与 Node/Electron 场景测试。
 
-8. 将序列化/持久化移出主线程（可选，保存仍占用明显时）
-   - 会话保存中的 `JSON.stringify` 与 slim/压缩逻辑迁移到 Web Worker 或分片执行。
-   - 保存触发策略进一步优化：只在提交态保存；或按时间窗合并多次提交。
-   - 实施要点（规划）：
-     - 明确瓶颈是否来自 localStorage 回退：在开启 `BANANAPOD_DEBUG_PERF=1` 时补充输出“保存路径”（indexedDB/localStorage/server）与序列化耗时区间。
-     - Worker 优先覆盖 `JSON.stringify(data)`：将待保存对象传入 Worker，Worker 返回序列化结果；主线程仅负责最小的落盘调用（localStorage 或 fs.writeFile）。
-     - localStorage 同步不可避免：若确实频繁落到 localStorage，则降低保存数据量（例如更小的 pickRecentBoards 上限或更激进的 slim），并延长 debounce/仅在 idle 空闲窗口保存。
-     - 兼容性：Worker 仅在浏览器环境启用；IndexedDB 仍是首选路径；失败时才走 localStorage 回退。
-   - 成功标准（验证）：
-     - 压力场景下 Console 中 `[Perf][LastSession]` 的 `save`/`idleRun` 次数与交互卡顿无明显相关，且 localStorage 回退时序列化耗时不再形成长任务。
-     - 刷新恢复仍正确（`loadLastSession` 能恢复最后一次提交态）。
+### 执行者反馈或请求帮助（本阶段约定）
 
-9. 历史存储从“全量快照”演进为“增量 diff”（可选，改动较大但上限最高）
-   - History 条目改为 patch：记录受影响元素的 before/after（或操作类型 + 参数），撤销/重做按 patch 回放。
-   - 持久化结构需要兼容旧格式，提供迁移与回滚路径。
+- 执行者在开始实现前，从“进行中/待办”中选择一个任务，将其拆分为 1–3 个具体操作步骤，并在此处记录。
+- 每完成一个任务：
+  - 在“项目状态看板（boardsStorage.ts 精简）”中将对应条目标记为已完成。
+  - 在本节补充：改动点、验证方式与结果，以及潜在风险。
+- 如在拆分过程中遇到“模块边界不清晰”或“某个依赖可能需要重新建模”，在此提出，由规划者补充方案。
 
-10. 图片与渲染路径专项优化（可选，图片继续增多时）
-   - 对大图导入做下采样/多级分辨率策略（视图缩放时用低分辨率预览，停下后再替换高清）。
-   - 对 rasterize/合并等重操作放到 Worker 或分批执行，避免阻塞交互。
+### 当前状态/进度跟踪（boardsStorage.ts 精简）
 
-## 项目状态看板
+- 规划者：已给出 boardsStorage.ts 精简的高层任务拆分与状态看板，当前阶段主要关注“行为等价前提下的模块边界重组”和“验证”。
+- 执行者：已完成对 `src/services/boardsStorage.ts` 的主要职责梳理，并基于此完成多轮等价重构。当前责任分布大致如下：
+  - 环境与能力探测：`boardsStorage.ts` 仍负责 `isBrowserEnv/canUseIndexedDB` 等，用于区分浏览器与 Node/Electron 环境，以及可用的存储能力。
+  - 性能统计与调试：`boardsStorage.ts` 中的 `isPerfEnabled/schedulePerfLog/perfCounters/perfLast*` 现在主要记录会话保存相关的次数、耗时和后端类型，并在 `BANANAPOD_DEBUG_PERF=1` 时输出 `[Perf][LastSession]` 日志，已移除图片专用计数。
+  - JSON 序列化：通用实现已迁移到 `src/utils/jsonStorage.ts`，`boardsStorage.ts` 通过 `stringifyForStorage` 获取 JSON 字符串及耗时信息，并在 Perf 中记录 stringify 路径（Worker/主线程）。
+  - 图片哈希与 Blob 存储：通用实现已迁移到 `src/services/imageStore.ts`，负责 `hrefToBlob/putImageBlob/getImageBlob/blobToDataUrl` 以及图片文件/IndexedDB 存储和对象 URL 缓存；`boardsStorage.ts` 只通过 `slimElement/inflateElementToDataUrl` 使用这些能力。
+  - Board 会话变换：`src/services/boardSession.ts` 负责 `slimBoardAsync/slimBoardForLocalStorage/pickRecentBoards/inflateBoardsForSession` 等与 Board 结构相关的通用变换；`boardsStorage.ts` 在保存/加载时调用这些函数，并注入图片 slim/inflate 逻辑。
+  - 会话保存实现与调度：`boardsStorage.ts` 继续负责 `saveLastSessionToIndexedDB/saveLastSessionToLocalStorage/saveLastSession` 以及 `touchLastSessionPending/saveLastSessionDebounced/scheduleLastSessionSaveInIdle/flushLastSessionSave`，用于在交互过程中对会话保存进行 debounce 与 `requestIdleCallback` 调度，并提供 flush 能力（页面关闭或定时器触发时同步保存）。
+  - 会话加载实现：`boardsStorage.ts` 中的 `loadLastSession` 负责从 IndexedDB/localStorage/Node 文件中读取 lastSession 数据，调用 `inflateBoardsForSession` 和图片 inflate 逻辑，并通过 `pickRecentBoards` 再次裁剪到最多 5 个 Board。
 
-### 已完成
+> 注：上方“当前文件包含的核心职责包括”段落部分描述的是重构前的状态，已在本节中用新的模块划分进行了更新说明，保留旧描述以便追踪演进过程。
 
-- [x] 建立基线与调试指标
-- [x] 修复历史记录写入放大效应
-- [x] 修复会话保存放大效应
-- [x] 将交互更新合并到 rAF
-- [x] 优化图层面板渲染（索引 + 冻结/降频）
-- [x] 控制历史增长与内存压力（maxHistory/合并策略）
-- [x] 降低全量遍历成本（bounds 缓存 + 空间索引）（已接入：选框/套索/橡皮擦；已回归验证：MCP 选框/套索/橡皮擦）
-- [x] 面板与列表虚拟化（可选）（已对图层面板生效）
-- [x] 序列化/持久化移出主线程（可选）（已落地：localStorage 回退路径 stringify → Worker；已验证：MCP 强制回退 + Perf 日志）
-- [x] 优化图片 dataURL 转 Blob 的主线程开销（可选）（已落地：data: 路径优先 fetch→blob；已验证：Perf 输出 imgDataUrlToBlob*）
-- [x] 历史增量 diff 方案设计与落地（可选）（已落地：History v2 patch；默认关闭）
-- [x] 增加 PromptBar 手动缩放按钮（解决长文本遮挡问题）
+### 验证指引（人工，针对本阶段）
 
-### 进行中
+- 浏览器场景：
+  - 在当前版本基础上导入多张图片和多个 Board，执行若干编辑操作（创建/删除/重命名 Board，添加图片和图形元素），刷新页面，确认会话恢复结果与操作前一致。
+  - 设置 `localStorage.setItem('BANANAPOD_DEBUG_PERF','1')`，做数次编辑/切换/刷新，查看 Console 中 `[Perf][LastSession]` 输出是否仍然存在，字段是否合理。
+- Node/Electron 场景（如适用）：
+  - 设置 `BANANAPOD_DATA_DIR`，运行应用并生成会话数据，确认该目录下的 `images` 和 `lastSession.json` 正常写入。
+  - 修改 Board 后再次退出/启动应用，确认会话恢复与预期一致。
 
-- [ ] 图片与渲染路径专项优化（可选）
+> 已运行 `node scripts/validate-structure.mjs`：boardsStorage.ts 结构检查通过，但缺少 `translations.ts` 与 `components/BoardPanel.tsx` 文件，这两项属于其它模块/阶段的工作范围，暂不在本次重构内处理。
 
-### 待办
-
-## 回滚方案
-
-- 快速回滚：保留原有更新路径开关（通过常量/配置切换）以便在出现撤销异常或保存丢失时恢复旧逻辑。
-- 数据兼容：任何持久化结构变更（如历史 diff）都必须保留读取旧格式的兼容分支，确保升级后仍可恢复会话。
-- 观测回滚：在回滚时保留性能指标日志，以便复盘原因并制定二次改进。
-
-## 执行者反馈或请求帮助（占位）
-
-- 执行者每完成一个待办项，更新“项目状态看板”的勾选状态，并记录：改动点、验证结果、潜在风险。
-
-### 当前状态/进度跟踪
-
-- 执行者：已增加 PromptBar 的手动折叠/展开功能。
-  - 新增 `isPromptCollapsed` 状态。
-  - 修改 `Textarea` 高度计算逻辑，支持折叠模式。
-  - 调整折叠高度为固定 104px（约 3 行文字高度 + 内边距）。
-  - 在 Top Controls 区域增加折叠/展开按钮。
-  - 验证：代码逻辑正确，UI 风格与现有按钮保持一致（IconButton + SVG）。
-
-### 验证指引（人工）
-
-- 构造压力场景：导入 50 张图片 + 150 个图形/文本元素，开启图层面板，连续拖动/缩放/绘制各 10 秒。
-- 验证撤销/重做：对拖动、缩放、绘制分别执行 5 次操作后撤销/重做，确认每次操作对应一次记录且状态正确。
-- 验证会话恢复：执行若干操作后刷新页面，确认恢复到最后一次“提交态”。
-- 验证 PromptBar 缩放：输入长文本，点击折叠按钮，确认高度减小但文本保留；再次点击，确认恢复原高度。
-
-### 请求帮助
-
-- 若线上/目标环境有明确 FPS 或性能基线（设备、浏览器版本、典型素材大小），请提供基线数据以便制定更精确的验收阈值。
-- 若目标部署环境存在 IndexedDB 不可用/被禁用的情况（例如隐私模式/内嵌 WebView 限制），请明确说明，以便优先优化 localStorage 回退路径的数据量与保存策略。
-
-## 历史归档（过时）
-
-- 2025-12 之前的 scratchpad 主要记录“模型选项收敛、PromptBar 展示名映射、API 调用修复”等事项；与本轮“画布交互性能优化”目标不同，已归档。
+---
