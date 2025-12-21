@@ -97,7 +97,7 @@ function isGrsaiEnabled(): boolean {
 
 async function grsaiFetch(path: string, init: RequestInit): Promise<Response> {
   const isDev = typeof import.meta !== 'undefined' && (import.meta as unknown as { env?: { DEV?: boolean } })?.env?.DEV === true
-  const useDevProxy = IS_BROWSER && (isDev || PROXY_VIA_VITE)
+  const useDevProxy = IS_BROWSER && isDev && PROXY_VIA_VITE
   const routePath = path.startsWith('/') ? path : `/${path}`
   const proxyUrl = `/proxy-grsai${routePath}`
   const directUrl = `${GRSAI_BASE_URL}${routePath}`

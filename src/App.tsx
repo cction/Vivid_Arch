@@ -306,7 +306,7 @@ const App: React.FC = () => {
     
 
 
-    const { handleGenerate } = useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, selectedElementIds, setSelectedElementIds, commitAction, setIsLoading, setProgressMessage, setError, prompt, generationMode, videoAspectRatio, imageAspectRatio, imageSize, imageModel, apiProvider, generateId });
+    const { handleGenerate, handleCancelGenerate } = useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, selectedElementIds, setSelectedElementIds, commitAction, setIsLoading, setProgressMessage, setError, prompt, generationMode, videoAspectRatio, imageAspectRatio, imageSize, imageModel, apiProvider, generateId });
 
 
     
@@ -506,6 +506,7 @@ const App: React.FC = () => {
                 prompt={prompt}
                 setPrompt={setPrompt}
                 onGenerate={handleGenerate}
+                onCancelGenerate={handleCancelGenerate}
                 isLoading={isLoading}
                 isSelectionActive={selectedElementIds.length > 0}
                 selectedElementCount={selectedElementIds.length}

@@ -12,6 +12,7 @@ interface PromptBarProps {
     prompt: string;
     setPrompt: (prompt: string) => void;
     onGenerate: () => void;
+    onCancelGenerate: () => void;
     isLoading: boolean;
     isSelectionActive: boolean;
     selectedElementCount: number;
@@ -85,7 +86,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     imageAspectRatio,
     setImageAspectRatio,
     setImageModel,
-    apiProvider
+    apiProvider,
+    onCancelGenerate
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -261,6 +263,17 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     })();
 
     const currentMaxHeight = isPromptCollapsed ? 104 : maxTextareaHeight;
+    const isPromptEmpty = !prompt.trim();
+    const isGenerating = isLoading;
+
+    const handleGenerateClick = () => {
+        if (isPromptEmpty) return;
+        if (isGenerating) {
+            onCancelGenerate();
+        } else {
+            onGenerate();
+        }
+    };
 
     return (
         <div ref={containerRef} className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[100] flex justify-center">
@@ -546,20 +559,21 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                         }
                                     </div>
 
-                                    {/* Generate Button */}
                                     <button
-                                        onClick={onGenerate}
-                                        disabled={isLoading || !prompt.trim()}
-                                        className="h-9 w-32 rounded-xl font-bold text-sm transition-all active:scale-[0.98] shadow-lg shadow-black/20 whitespace-nowrap pod-generate-button flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onClick={handleGenerateClick}
+                                        disabled={isPromptEmpty}
+                                        className="h-9 w-24 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-black/20 pod-generate-button flex items-center justify-center text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+                                        aria-label={isGenerating ? t('promptBar.cancel') : t('promptBar.generate')}
+                                        title={isGenerating ? t('promptBar.cancel') : t('promptBar.generate')}
                                     >
-                                        {isLoading ? (
-                                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        {isGenerating ? (
+                                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="12" cy="12" r="8" />
+                                                <rect x="9.5" y="9.5" width="5" height="5" rx="0.6" fill="currentColor" />
                                             </svg>
-                                    ) : (
-                                        t('promptBar.generate')
-                                    )}
+                                        ) : (
+                                            t('promptBar.generate')
+                                        )}
                                     </button>
                                 </div>
                             </div>
