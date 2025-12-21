@@ -183,6 +183,8 @@ export const translations = {
         siteUnitLabel: 'Site units: ',
         siteBalancePrefix: 'Site units balance: ',
         siteUsedPrefix: 'Site units used: ',
+        updatePanelTitle: 'Latest Updates',
+        noUpdates: 'No updates found.',
     },
     contextMenu: {
         copy: 'Copy',
@@ -317,6 +319,8 @@ export const translations = {
         siteUnitLabel: '网站额度：',
         siteBalancePrefix: '网站额度余额：',
         siteUsedPrefix: '网站额度已消耗：',
+        updatePanelTitle: '最近更新',
+        noUpdates: '暂无更新记录。',
     },
     contextMenu: {
         copy: '复制',

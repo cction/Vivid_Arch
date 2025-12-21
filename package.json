@@ -1,11 +1,13 @@
 {
   "name": "bananapod",
   "private": true,
-  "version": "1.2.7",
+  "version": "1.2.8",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "npm run predev && vite",
+    "predev": "node scripts/generateUpdateFeed.mjs",
+    "build": "npm run prebuild && vite build",
+    "prebuild": "node scripts/generateUpdateFeed.mjs",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",

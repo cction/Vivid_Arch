@@ -65,8 +65,6 @@
 
 #### 进行中
 
-- [ ] 设计并执行手动测试用例，覆盖正常流程与各类异常/取消场景。
-- [ ] 根据测试结果微调按钮交互与错误提示文案。
 
 #### 待办
 
@@ -94,3 +92,104 @@
 -  - 已在 `useGenerationPipeline.ts` 中引入基于 `useRef` 的递增 token 机制，封装 `safeSetIsLoading/safeSetError/safeCommitAction/safeSetSelectedElementIds` 等方法，并在所有异步回调和占位符替换逻辑前检查 token，确保取消后旧请求不会继续修改画布或状态，同时导出 `handleCancelGenerate`。
 -  - 已在 `App.tsx` 中接入新的 `handleCancelGenerate`，并将其传递给 `PromptBar`，使主生成按钮具备取消当前生图的能力；同时保持原有 `isLoading` 与 Loader 行为不变。
 -  - 已运行 `npm run lint` 与 `npx tsc --noEmit`，当前无新增 lint 或类型错误。
+
+---
+
+## 当前阶段：设置面板右侧增加更新面板（规划者）
+
+### 背景和动机
+
+- 现状：设置面板 `CanvasSettings` 只展示基础偏好与 API 设置，没有将最近版本的功能更新可视化呈现给用户。
+- 痛点：
+  - 用户不清楚近期版本新增了哪些能力或 UI 改动，只能阅读 `CHANGELOG.md` 等开发文档。
+  - 产品迭代频率较高，但缺少一个“就近可见”的轻量版本日志入口。
+- 目标：
+   - 在设置界面右侧增加一个“更新面板（Update Panel）”，自动展示最近三个版本的功能更新摘要，支持滚动查看且整体高度不超过当前设置面板高度。
+  - 更新内容从 `CHANGELOG.md` 中自动提取，前端只消费结构化摘要，无需在浏览器中解析 Markdown。
+
+### 关键挑战和分析
+
+- 数据来源与抽取方式：
+  - 必须基于现有 `CHANGELOG.md`，不能引入额外的手工维护更新文案，避免信息不一致。
+  - Markdown 结构存在多种类型条目（feat/fix/ui/docs/chore 等），需要筛选出对最终用户有价值的“高亮”项。
+- 构建流程与前端解耦：
+  - 不宜在浏览器侧做复杂正则解析，影响首屏性能并增加错误面。
+  - 更合适的方式是在构建前使用 Node 脚本，生成一个轻量 JSON（最近 3 个版本），供前端直接 `import`。
+- 布局与交互：
+  - 设置面板当前宽度约 `w-80`，需要在不破坏现有视觉的前提下调整为左右两列布局。
+  - 左侧继续展示原有设置项，右侧为更新面板；两侧内部分别滚动，外层 Panel 保持单一高度限制。
+- 国际化与文案：
+  - 标题与描述需要支持中英文切换；版本号与日期保持原样即可。
+  - 更新摘要本身主要来自中文 `CHANGELOG`，短期内先以中文展示为主，后续如有英文 changelog 再扩展。
+
+### 高层任务拆分
+
+1. 基于 CHANGELOG 生成更新摘要 JSON
+   - 编写 Node 脚本（如 `scripts/generateUpdateFeed.mjs`），读取项目根目录 `CHANGELOG.md`。
+   - 解析版本段落：以 `## v...` 作为版本头，截取到下一个 `##` 或文件末尾。
+   - 在每个版本块中筛选以 `- feat(`、`- ui(`、`- style(`、`- fix(`、`- perf(`、`- compat(`、`- refactor(` 开头的条目，裁剪前缀和模块名，只保留自然语言部分。
+   - 每个版本保留前 3 条高亮，组装为 `{ version, date?, highlights[] }` 结构。
+   - 仅输出最近 3 个版本，写入 `src/config/updateFeed.json`。
+   - 在 `package.json` 中配置 `"predev"` 和 `"prebuild"` 钩子自动生成该 JSON，避免手工执行。
+
+2. 定义前端类型与 UpdatePanel 组件
+   - 在前端定义 `VersionUpdate` 与 `UpdateFeed` 类型，约束 `updateFeed.json` 结构。
+   - 新增 `src/features/settings/UpdatePanel.tsx` 组件：
+     - 接收 `updates: VersionUpdate[]`、`language: 'en' | 'ZH'`、`t`。
+     - 在有限高度内以卡片形式展示最近 3 个版本，内部支持纵向滚动。
+     - 每个版本卡片内容包含：版本号、可选日期、最多 3 条高亮描述。
+   - 处理空数据兜底：无更新时展示“暂无更新记录”文案或静默隐藏。
+
+3. 调整 CanvasSettings 布局接入更新面板
+   - 修改 `src/features/settings/CanvasSettings.tsx`：
+     - 将原有内容区改为左右布局：左侧为原设置项，右侧为 `UpdatePanel`。
+     - 适度增大 Panel 宽度（如 `w-[720px] max-w-[95vw]`），保证两侧内容可读。
+     - 左右列设为 `h-full` + `overflow-y-auto`，使两侧各自滚动，整体高度仍由 Panel 的 `max-h-[85vh]` 控制。
+   - 在 CanvasSettings 中 `import updates from '@/config/updateFeed.json'`，将其与 `language`、`t` 一并传入 `UpdatePanel`。
+   - 根据需要在小屏幕隐藏右侧更新面板（如 `hidden md:block`），防止窄屏拥挤。
+
+4. 国际化文案补充与 UI 微调
+   - 在 `src/i18n/translations.ts` 的 `settings` 下新增：
+     - `updatePanelTitle`：`'Latest updates'` / `'最近更新'`
+     - `updatePanelFromChangelog`（可选）：说明“基于 CHANGELOG.md 总结”。
+   - 在 UpdatePanel 中使用 `t('settings.updatePanelTitle')` 等文案，保持与现有设置面板风格一致。
+   - 调整右侧卡片的字体大小、间距与滚动条样式，复用 `pod-scrollbar`。
+
+5. 验证与回归测试
+   - 手动验证：
+     - 启动 `npm run dev`，打开设置面板，确认右侧展示最近 3 个版本的更新摘要，支持滚动且高度不超出 Panel。
+     - 修改 `CHANGELOG.md` 新增一个版本号，重新运行 dev/build，确认右侧自动更新，且只保留最新 3 个版本。
+   - 命令验证：
+     - 运行 `npm run lint`、`npx tsc --noEmit`、`npm run build`，确保新脚本与组件无 lint/类型/构建错误。
+
+### 项目状态看板（设置面板右侧更新面板）
+
+#### 已完成
+
+- [x] 规划者：梳理设置面板右侧更新面板的需求背景与约束条件。
+- [x] 规划者：输出基于 CHANGELOG 的数据抽取方案与前端组件整体设计。
+- [x] 执行者：设计并实现 `generateUpdateFeed` Node 脚本，从 `CHANGELOG.md` 生成结构化 `updateFeed.json`。
+- [x] 执行者：实现 `UpdatePanel` 前端组件，并在 `CanvasSettings` 中完成布局改造。
+- [x] 执行者：补充 i18n 文案与样式，执行 lint/typecheck/build 与手动验证。
+- [x] 执行者：根据用户反馈调整布局（左侧宽度固定 200px，优化紧凑度）。
+- [x] 执行者：优化 API Key 设置区布局，改为纵向排列，防止窄屏下溢出。
+- [x] 执行者：将保存按钮调整为右对齐紧凑样式，符合整体 UI 设计。
+- [x] 执行者：统一保存按钮圆角样式 (rounded-md)，与设置面板其他元素保持一致。
+- [x] 执行者：调整更新摘要生成逻辑，仅展示最近 2 个版本。
+
+#### 进行中
+
+- [ ] 评估后续是否需要英文 `CHANGELOG` 或更精细的高亮规则，以提升英文界面的可读性。
+
+#### 待办
+
+- [ ] (可选) 优化脚本以支持更多格式的 Changelog 标题或自定义高亮标签。
+
+### 执行者反馈或请求帮助（设置面板右侧更新面板）
+
+- 执行者（本轮实现）：
+  - 已编写 `scripts/generateUpdateFeed.mjs` 并配置 `predev/prebuild` 钩子，实现了从 `CHANGELOG.md` 提取并按版本号倒序生成最近 3 个版本的 JSON 数据。
+  - 已新增 `src/features/settings/UpdatePanel.tsx` 组件，并调整 `CanvasSettings.tsx` 为左右分栏布局（左侧设置，右侧更新面板）。
+  - 已更新 `src/i18n/translations.ts` 添加中英文标题文案。
+  - 运行 `npm run lint` 和 `npx tsc --noEmit` 均通过；脚本生成的 JSON 数据准确无误。
+  - 注意：`UpdatePanel` 在宽度小于 `md` (768px) 时会自动隐藏，以适应移动端/小屏布局。

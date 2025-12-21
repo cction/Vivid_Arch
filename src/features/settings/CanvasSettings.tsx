@@ -1,6 +1,8 @@
 import React from 'react';
 import { Panel, IconButton, Button } from '@/ui';
 import type { WheelAction } from '@/types';
+import { UpdatePanel, type VersionUpdate } from './UpdatePanel';
+import updateFeed from '@/config/updateFeed.json';
 
 interface CanvasSettingsProps {
     isOpen: boolean;
@@ -49,8 +51,8 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
             className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm"
             onClick={onClose}
         >
-            <Panel className="relative flex flex-col w-80 max-w-[90vw] max-h-[85vh] overflow-hidden shadow-2xl">
-                <div onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); }}>
+            <Panel className="relative flex flex-col w-[720px] max-w-[95vw] max-h-[85vh] overflow-hidden shadow-2xl">
+                <div onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); }} className="flex flex-col h-full">
                     {/* Header */}
                     <div className="flex-shrink-0 px-4 py-3 flex justify-between items-center border-b border-[var(--border-color)] bg-[var(--bg-panel)] z-10">
                         <h3 className="text-base font-semibold text-[var(--text-heading)]">{t('settings.title')}</h3>
@@ -59,11 +61,13 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
                         </IconButton>
                     </div>
 
-                    {/* Content */}
-                    <div className="flex-grow overflow-y-auto p-4 space-y-4 pod-scrollbar">
+                    {/* Main Body: Left (Settings) + Right (Updates) */}
+                    <div className="flex-grow flex overflow-hidden">
+                        {/* Left: Original Settings (Single Column) */}
+                        <div className="w-[200px] flex-shrink-0 overflow-y-auto p-3 space-y-4 pod-scrollbar border-r border-[var(--border-color)]">
 
                         {/* Preferences */}
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-3">
                             <div className="space-y-1.5">
                                 <label className="text-xs font-medium text-[var(--text-heading)]">{t('settings.language')}</label>
                                 <div className="flex p-0.5 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)]">
@@ -136,7 +140,7 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-xs font-medium text-[var(--text-heading)]">{t('settings.apiKey')}</label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-col gap-1.5 items-end">
                                     <input
                                         type="password"
                                         value={apiProvider === 'Grsai' ? grsaiApiKey : apiKey}
@@ -145,11 +149,20 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
                                             if (apiProvider === 'Grsai') setGrsaiApiKey(v); else setApiKey(v);
                                         }}
                                         placeholder={apiProvider === 'Grsai' ? (language === 'ZH' ? '代理B 令牌' : 'Proxy B Token') : (language === 'ZH' ? '代理A 令牌' : 'Proxy A Token')}
-                                        className="pod-input pod-input-sm flex-1 text-xs"
+                                        className="pod-input pod-input-sm w-full text-xs"
                                     />
-                                    <Button onClick={onClose} size="sm" className="h-8 px-3 text-xs whitespace-nowrap">{t('settings.apiKeySave')}</Button>
+                                    <Button onClick={onClose} size="sm" className="h-6 px-3 text-xs w-auto rounded-md">{t('settings.apiKeySave')}</Button>
                                 </div>
                             </div>
+                        </div>
+                        </div>
+
+                        {/* Right: Update Panel (Desktop only) */}
+                        <div className="flex-1 hidden md:block py-3 pr-3 h-full overflow-hidden">
+                            <UpdatePanel
+                                updates={updateFeed as VersionUpdate[]}
+                                t={t}
+                            />
                         </div>
                     </div>
                 </div>
