@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import type { Element, ImageElement, VideoElement } from '@/types'
 import { getElementBounds, rasterizeElements } from '@/utils/canvas'
+import { getUiRadiusLg } from '@/ui/standards'
 
 type Deps = {
   elementsRef: MutableRefObject<Element[]>
@@ -53,7 +54,7 @@ export function useContextMenuActions({ elementsRef, selectedElementIds, setSele
         minY = Math.min(minY, bounds.y)
       })
       const { href, mimeType, width, height } = await rasterizeElements(elementsToRasterize)
-      const newImage: ImageElement = { id: generateId(), type: 'image', name: 'Rasterized Image', x: minX - 10, y: minY - 10, width, height, href, mimeType }
+      const newImage: ImageElement = { id: generateId(), type: 'image', name: 'Rasterized Image', x: minX - 10, y: minY - 10, width, height, href, mimeType, borderRadius: getUiRadiusLg() }
       const idsToRemove = new Set(elementsToRasterize.map(el => el.id))
       commitAction(prev => {
         const remainingElements = prev.filter(el => !idsToRemove.has(el.id))

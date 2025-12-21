@@ -1,4 +1,5 @@
 import type { Element, ImageElement, VideoElement } from '@/types';
+import { getUiRadiusLg } from '@/ui/standards';
 
 type Rect = { x: number; y: number; width: number; height: number };
 
@@ -317,11 +318,17 @@ export const flattenElementsToImage = (
     }
     const offsetX = -minX;
     const offsetY = -minY;
+    const clipDefs = validElements.filter(el => el.type === 'image').map(el => {
+      const clip = computeImageClip(el as ImageElement, 'flat_clip_');
+      return clip.r > 0 ? `<clipPath id="${clip.id}"><rect x="${clip.rect.x}" y="${clip.rect.y}" width="${clip.rect.width}" height="${clip.rect.height}" rx="${clip.r}" ry="${clip.r}" /></clipPath>` : '';
+    }).join('');
     const elementSvgStrings = validElements.map(element => {
       let elementSvgString = '';
       switch (element.type) {
         case 'image': {
-          elementSvgString = `<image href="${element.href}" x="${element.x + offsetX}" y="${element.y + offsetY}" width="${element.width}" height="${element.height}" opacity="${typeof element.opacity === 'number' ? element.opacity / 100 : 1}" />`;
+          const clip = computeImageClip(element as ImageElement, 'flat_clip_');
+          const cp = clip.r > 0 ? ` clip-path="url(#${clip.id})"` : '';
+          elementSvgString = `<image href="${element.href}" x="${element.x + offsetX}" y="${element.y + offsetY}" width="${element.width}" height="${element.height}" opacity="${typeof element.opacity === 'number' ? element.opacity / 100 : 1}"${cp} />`;
           break;
         }
         case 'path': {
@@ -373,7 +380,7 @@ export const flattenElementsToImage = (
       }
       return elementSvgString;
     }).join('');
-    const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${combinedWidth}" height="${combinedHeight}">${elementSvgStrings}</svg>`;
+    const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${combinedWidth}" height="${combinedHeight}"><defs>${clipDefs}</defs>${elementSvgStrings}</svg>`;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     const svgDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(fullSvg)))}`;
@@ -394,4 +401,11 @@ export const flattenElementsToImage = (
     };
     img.src = svgDataUrl;
   });
+};
+
+export const computeImageClip = (el: ImageElement, prefix = 'clip-') => {
+  const r0 = typeof el.borderRadius === 'number' ? el.borderRadius : getUiRadiusLg();
+  const r = Math.max(0, r0);
+  const id = `${prefix}${el.id}`;
+  return { id, r, rect: { x: el.x, y: el.y, width: el.width, height: el.height } };
 };

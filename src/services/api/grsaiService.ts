@@ -145,9 +145,16 @@ async function parseImageJson(json: { data?: unknown; results?: ImageItem[]; [k:
     const d = (json as { data?: { results?: ImageItem[] } }).data
     if (d && Array.isArray(d.results)) item = d.results[0]
   }
+  if (item?.b64_json) {
+    const base64 = normalizeBase64(stripBase64Header(String(item.b64_json)))
+    const mime = detectMimeFromBase64(base64)
+    return { newImageBase64: base64, newImageMimeType: mime, textResponse: `使用 ${usedModel} 模型成功生成图像` }
+  }
   if (item?.url) {
+    let lastError: Error | null = null
     try {
       const r = await fetch(String(item.url))
+      if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`)
       const blob = await r.blob()
       const reader = new FileReader()
       return await new Promise((resolve) => {
@@ -159,12 +166,12 @@ async function parseImageJson(json: { data?: unknown; results?: ImageItem[]; [k:
         }
         reader.readAsDataURL(blob)
       })
-    } catch { void 0 }
-  }
-  if (item?.b64_json) {
-    const base64 = normalizeBase64(stripBase64Header(String(item.b64_json)))
-    const mime = detectMimeFromBase64(base64)
-    return { newImageBase64: base64, newImageMimeType: mime, textResponse: `使用 ${usedModel} 模型成功生成图像` }
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+    }
+    if (lastError) {
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：无法获取生成结果 (${lastError.message})` }
+    }
   }
   return { newImageBase64: null, newImageMimeType: null, textResponse: '图像生成失败：未找到输出' }
 }

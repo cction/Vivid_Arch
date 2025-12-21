@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:banana": "node scripts/test-banana.mjs",
-    "test:grsai": "node scripts/test-grsai.mjs"
+    "test:grsai": "node scripts/test-grsai.mjs",
+    "test:placeholder": "node scripts/test-placeholder.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",

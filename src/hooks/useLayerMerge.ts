@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import type { Element, ImageElement } from '@/types';
 import { flattenElementsToImage } from '@/utils/canvas';
+import { getUiRadiusLg } from '@/ui/standards';
 
 type Deps = {
   elementsRef: MutableRefObject<Element[]>;
@@ -50,6 +51,7 @@ export function useLayerMerge({ elementsRef, selectedElementIds, getDescendants,
         height: flattened.height,
         href: flattened.href,
         mimeType: flattened.mimeType,
+        borderRadius: getUiRadiusLg(),
         isLocked: false,
         isVisible: true,
       };
@@ -65,4 +67,3 @@ export function useLayerMerge({ elementsRef, selectedElementIds, getDescendants,
 
   return { handleMergeLayers };
 }
-

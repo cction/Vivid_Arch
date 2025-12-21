@@ -1,9 +1,10 @@
 import React from 'react';
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import type { Element, ImageElement, Point } from '@/types';
-import { getElementBounds } from '@/utils/canvas';
+import { getElementBounds, computeImageClip } from '@/utils/canvas';
 import { SelectionOverlay } from '@/components/SelectionOverlay';
 import { PLACEHOLDER_DATA_URL } from '@/utils/image';
+import { getUiRadiusLg } from '@/ui/standards';
 type Rect = { x: number; y: number; width: number; height: number };
 type Guide = { type: 'v' | 'h'; position: number; start: number; end: number };
 interface CanvasProps {
@@ -107,13 +108,15 @@ export const Canvas: React.FC<CanvasProps> = ({
           <path d="M-4 8 L8 -4" stroke="#374151" strokeWidth="1" opacity="0.35" />
         </pattern>
         {elements.map(el => {
-          if (el.type === 'image' && el.borderRadius && el.borderRadius > 0) {
-            const clipPathId = `clip-${el.id}`;
-            return (
-              <clipPath id={clipPathId} key={clipPathId}>
-                <rect width={el.width} height={el.height} rx={el.borderRadius} ry={el.borderRadius} />
-              </clipPath>
-            );
+          if (el.type === 'image') {
+            const clip = computeImageClip(el as ImageElement, 'clip-');
+            if (clip.r > 0) {
+              return (
+                <clipPath id={clip.id} key={clip.id}>
+                  <rect x={clip.rect.x} y={clip.rect.y} width={clip.rect.width} height={clip.rect.height} rx={clip.r} ry={clip.r} />
+                </clipPath>
+              );
+            }
           }
           return null;
         })}
@@ -185,16 +188,92 @@ export const Canvas: React.FC<CanvasProps> = ({
             );
           }
           if (el.type === 'image') {
-            const hasR = el.borderRadius && el.borderRadius > 0;
+            const br = typeof (el as ImageElement).borderRadius === 'number' ? (el as ImageElement).borderRadius! : getUiRadiusLg();
+            const hasR = br > 0;
             const cid = `clip-${el.id}`;
             const isPh = el.href === PLACEHOLDER_DATA_URL;
+            const imgEl = el as ImageElement;
+            const showSpinner = imgEl.isGenerating;
+            const spinnerR = Math.min(Math.min(el.width, el.height) / 4, 12 / zoom);
+
+            if (isPh) {
+              return (
+                <g key={el.id} data-id={el.id} className="cursor-pointer">
+                  <rect
+                    x={el.x}
+                    y={el.y}
+                    width={el.width}
+                    height={el.height}
+                    style={{ fill: 'var(--bg-component-solid)', stroke: 'var(--border-color)', strokeWidth: 1 / Math.max(1, zoom) } as React.CSSProperties}
+                    clipPath={hasR ? `url(#${cid})` : undefined}
+                  />
+                  {(el as ImageElement).previewHref && (
+                    <image
+                      x={el.x}
+                      y={el.y}
+                      width={el.width}
+                      height={el.height}
+                      href={(el as ImageElement).previewHref}
+                      preserveAspectRatio="none"
+                      opacity={0.3}
+                      style={{ filter: 'grayscale(0.3) contrast(0.8) brightness(0.7)' }}
+                      clipPath={hasR ? `url(#${cid})` : undefined}
+                    />
+                  )}
+                  {showSpinner && (
+                    <g transform={`translate(${el.x + el.width / 2}, ${el.y + el.height / 2}) scale(${1 / zoom})`}>
+                      <g transform="translate(-12, -24)">
+                        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="12" cy="12" r="10" stroke="#A78BFA" strokeWidth="4" opacity="0.25" />
+                          <path fill="#A78BFA" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                            <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
+                          </path>
+                        </svg>
+                      </g>
+                      <g transform="translate(0, 10)">
+                        <rect x="-40" y="0" width="80" height="24" rx="12" fill="#171717" fillOpacity="0.9" stroke="white" strokeOpacity="0.1" strokeWidth="1" />
+                        <text x="0" y="16" textAnchor="middle" fill="white" fillOpacity="0.9" fontSize="11" fontWeight="500" style={{ pointerEvents: 'none', userSelect: 'none', fontFamily: 'system-ui, -apple-system, sans-serif' }}>Generating...</text>
+                      </g>
+                    </g>
+                  )}
+                  {selectionComponent}
+                </g>
+              );
+            }
+
             return (
               <g key={el.id} data-id={el.id}>
-                {isPh && (hasR
-                  ? <rect x={el.x} y={el.y} width={el.width} height={el.height} fill="url(#podui-placeholder)" stroke="#374151" strokeWidth={1 / zoom} clipPath={`url(#${cid})`} />
-                  : <rect x={el.x} y={el.y} width={el.width} height={el.height} fill="url(#podui-placeholder)" stroke="#374151" strokeWidth={1 / zoom} />
+                <image
+                  x={el.x}
+                  y={el.y}
+                  href={el.href}
+                  width={el.width}
+                  height={el.height}
+                  className={croppingState && croppingState.elementId !== el.id ? 'opacity-30' : ''}
+                  opacity={typeof el.opacity === 'number' ? el.opacity / 100 : 1}
+                  clipPath={hasR ? `url(#${cid})` : undefined}
+                />
+                {showSpinner && spinnerR > 0 && (
+                  <g transform={`translate(${el.x + el.width / 2}, ${el.y + el.height / 2})`}>
+                    <svg
+                      className="animate-spin text-purple-400 drop-shadow-md"
+                      x={-spinnerR}
+                      y={-spinnerR}
+                      width={spinnerR * 2}
+                      height={spinnerR * 2}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                  </g>
                 )}
-                <image transform={`translate(${el.x}, ${el.y})`} href={el.href} width={el.width} height={el.height} className={croppingState && croppingState.elementId !== el.id ? 'opacity-30' : ''} opacity={typeof el.opacity === 'number' ? el.opacity / 100 : 1} clipPath={hasR ? `url(#${cid})` : undefined} />
                 {selectionComponent}
               </g>
             );

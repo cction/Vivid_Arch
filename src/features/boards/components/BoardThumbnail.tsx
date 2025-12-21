@@ -1,6 +1,9 @@
 import React, { useMemo } from 'react';
 import type { Board } from '@/types';
-import { getElementBounds } from '@/utils/canvas';
+import { getElementBounds, computeImageClip } from '@/utils/canvas';
+import type { ImageElement } from '@/types';
+import { getUiRadiusLg } from '@/ui/standards';
+import { PLACEHOLDER_DATA_URL } from '@/utils/image';
 
 const THUMB_WIDTH = 120;
 const THUMB_HEIGHT = 80;
@@ -39,6 +42,11 @@ export function BoardThumbnail({ board }: { board: Board }) {
     >
       <rect width={THUMB_WIDTH} height={THUMB_HEIGHT} fill={board.canvasBackgroundColor || '#0F0D13'} />
       <defs>
+        <pattern id="podui-placeholder" width="8" height="8" patternUnits="userSpaceOnUse">
+          <rect width="8" height="8" fill="#1E1E24" />
+          <path d="M0 8 L8 0" stroke="#374151" strokeWidth="1" opacity="0.35" />
+          <path d="M-4 8 L8 -4" stroke="#374151" strokeWidth="1" opacity="0.35" />
+        </pattern>
         <marker
           id={arrowMarkerId}
           viewBox="0 0 10 10"
@@ -51,15 +59,15 @@ export function BoardThumbnail({ board }: { board: Board }) {
           <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
         </marker>
         {elements
-          .filter(el => el.type === 'image' && typeof (el as { borderRadius?: number }).borderRadius === 'number' && ((el as { borderRadius?: number }).borderRadius ?? 0) > 0)
+          .filter(el => el.type === 'image')
           .map(el => {
-            const img = el as { id: string; x: number; y: number; width: number; height: number; borderRadius?: number };
-            const r = Math.max(0, img.borderRadius ?? 0);
-            return (
-              <clipPath key={img.id} id={`thumb_clip_${img.id}`}>
-                <rect x={img.x} y={img.y} width={img.width} height={img.height} rx={r} ry={r} />
+            const img = el as ImageElement;
+            const clip = computeImageClip(img, 'thumb_clip_');
+            return clip.r > 0 ? (
+              <clipPath key={img.id} id={clip.id}>
+                <rect x={clip.rect.x} y={clip.rect.y} width={clip.rect.width} height={clip.rect.height} rx={clip.r} ry={clip.r} />
               </clipPath>
-            );
+            ) : null;
           })}
       </defs>
       <g transform={`translate(${transform.dx} ${transform.dy}) scale(${transform.scale})`}>
@@ -82,7 +90,22 @@ export function BoardThumbnail({ board }: { board: Board }) {
 
           if (el.type === 'image') {
             const opacity = typeof el.opacity === 'number' ? el.opacity / 100 : 1;
-            const clipId = typeof el.borderRadius === 'number' && el.borderRadius > 0 ? `url(#thumb_clip_${el.id})` : undefined;
+            const br = typeof el.borderRadius === 'number' ? el.borderRadius : getUiRadiusLg();
+            const clipId = br > 0 ? `url(#thumb_clip_${el.id})` : undefined;
+            const isPh = el.href === PLACEHOLDER_DATA_URL || !!el.isPlaceholder;
+            if (isPh) {
+              return (
+                <rect
+                  key={el.id}
+                  x={el.x}
+                  y={el.y}
+                  width={el.width}
+                  height={el.height}
+                  fill="url(#podui-placeholder)"
+                  clipPath={clipId}
+                />
+              );
+            }
             return (
               <image
                 key={el.id}
@@ -209,4 +232,3 @@ export function BoardThumbnail({ board }: { board: Board }) {
     </svg>
   );
 }
-

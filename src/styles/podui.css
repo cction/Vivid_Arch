@@ -336,6 +336,9 @@
   border-radius: 50%;
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
+.pod-icon-md { width: 40px; height: 40px; }
+.pod-icon-sm { width: 32px; height: 32px; }
+.pod-icon-lg { width: 48px; height: 48px; }
 
 .pod-icon-button:hover {
   background-color: rgba(255, 255, 255, 0.1);
@@ -354,6 +357,11 @@
 .pod-icon-button[disabled] {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.pod-icon-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 55, 139, 0.8), 0 0 0 6px rgba(79, 55, 139, 0.25);
 }
 
 .pod-primary-button {
@@ -381,6 +389,11 @@
 .pod-primary-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.pod-primary-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 55, 139, 0.9), 0 0 0 6px rgba(79, 55, 139, 0.35);
 }
 
 /* Utility Classes */
@@ -480,6 +493,35 @@
   background-color: color-mix(in srgb, var(--color-lime-300), white 15%);
   border-color: color-mix(in srgb, var(--color-lime-300), white 15%);
 }
+.pod-generate-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(204, 251, 67, 0.9), 0 0 0 6px rgba(204, 251, 67, 0.35);
+}
+.pod-generate-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pod-btn-danger {
+  background-color: #ef4444;
+  border-color: #ef4444;
+  color: #100f1a;
+  border-radius: 12px;
+  padding: 6px 14px;
+  transition: all var(--transition-speed-fast);
+}
+.pod-btn-danger:hover {
+  background-color: #f87171;
+  border-color: #f87171;
+}
+.pod-btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.pod-btn-danger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.9), 0 0 0 6px rgba(239, 68, 68, 0.35);
+}
 
 .pod-btn-secondary {
   background-color: var(--bg-component);
@@ -492,6 +534,11 @@
 .pod-btn-secondary:hover {
   background-color: var(--border-color);
   color: var(--text-heading);
+}
+
+.pod-btn-secondary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
 }
 
 .pod-btn-ghost {
@@ -507,6 +554,11 @@
   color: var(--text-primary);
 }
 
+.pod-btn-ghost:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+
 .pod-btn-outline {
   background-color: transparent;
   color: var(--text-primary);
@@ -518,6 +570,11 @@
 .pod-btn-outline:hover {
   background-color: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+.pod-btn-outline:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 55, 139, 0.6);
 }
 
 .pod-btn-xs {
@@ -558,6 +615,23 @@
 .pod-input:disabled { opacity: 0.6; cursor: not-allowed; }
 .pod-input-sm { height: 32px; font-size: 0.8125rem; }
 .pod-input-md { height: 40px; font-size: 0.9rem; }
+
+.pod-select {
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 12px;
+  padding: 8px 12px;
+  transition: all var(--pod-transition-fast);
+}
+.pod-select:focus {
+  outline: none;
+  border-color: var(--text-accent);
+}
+.pod-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .pod-dialog-overlay {
   position: fixed;
@@ -615,6 +689,11 @@
   outline: none;
   resize: none;
 }
+.pod-textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 55, 139, 0.7);
+  border-radius: 12px;
+}
 
 .pod-prompt-textarea {
   padding: var(--pod-textarea-padding, 16px 60px 16px 12px);
@@ -637,6 +716,7 @@
 
 .pod-list-item {
   border-radius: var(--border-radius-base);
+  color: var(--text-primary);
 }
 .pod-list-item.selected {
   background-color: color-mix(in srgb, var(--brand-solid), transparent 72%);
@@ -903,6 +983,10 @@
   background-color: var(--bg-component-solid);
   color: var(--text-accent);
   border-color: var(--text-accent);
+}
+.pod-circle-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 55, 139, 0.8), 0 0 0 6px rgba(79, 55, 139, 0.25);
 }
 
 .pod-prompt-actions {
@@ -1569,6 +1653,10 @@
   background-color: #4F378B;
   color: white;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+.pod-segment-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 55, 139, 0.7), 0 0 0 6px rgba(79, 55, 139, 0.25);
 }
 .pod-segment-button:disabled {
   opacity: 0.5;

@@ -2,8 +2,9 @@ import { useCallback } from 'react'
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import type { Element, ImageElement, PathElement, VideoElement, Point } from '@/types'
 import { rasterizeElement, getElementBounds } from '@/utils/canvas'
-import { loadImageWithFallback } from '@/utils/image'
+import { loadImageWithFallback, PLACEHOLDER_DATA_URL } from '@/utils/image'
 import { editImage as editImageWhatai, generateImageFromText as generateImageFromTextWhatai, generateVideo } from '@/services/api/geminiService'
+import { getUiRadiusLg } from '@/ui/standards'
 import { editImage as editImageGrsai, generateImageFromText as generateImageFromTextGrsai } from '@/services/api/grsaiService'
 
 type Deps = {
@@ -24,6 +25,41 @@ type Deps = {
   imageModel: string
   apiProvider: 'WHATAI' | 'Grsai'
   generateId: () => string
+}
+
+const PRO_1K_SIZES: Record<string, { w: number; h: number }> = {
+  '1:1': { w: 1024, h: 1024 },
+  '2:3': { w: 848, h: 1264 },
+  '3:2': { w: 1264, h: 848 },
+  '3:4': { w: 896, h: 1200 },
+  '4:3': { w: 1200, h: 896 },
+  '4:5': { w: 928, h: 1152 },
+  '5:4': { w: 1152, h: 928 },
+  '9:16': { w: 768, h: 1376 },
+  '16:9': { w: 1376, h: 768 },
+  '21:9': { w: 1584, h: 672 },
+}
+
+const FLASH_1K_SIZES: Record<string, { w: number; h: number }> = {
+  '1:1': { w: 1024, h: 1024 },
+  '2:3': { w: 832, h: 1248 },
+  '3:2': { w: 1248, h: 832 },
+  '3:4': { w: 864, h: 1184 },
+  '4:3': { w: 1184, h: 864 },
+  '4:5': { w: 896, h: 1152 },
+  '5:4': { w: 1152, h: 896 },
+  '9:16': { w: 768, h: 1344 },
+  '16:9': { w: 1344, h: 768 },
+  '21:9': { w: 1536, h: 672 },
+}
+
+function getPlaceholderSize(model: string, size: '1K' | '2K' | '4K', aspectRatio: string | undefined): { width: number; height: number } {
+  const isProModel = model === 'nano-banana-pro' || model === 'nano-banana-2'
+  const ar = aspectRatio || '1:1'
+  const base = isProModel ? (PRO_1K_SIZES[ar] || PRO_1K_SIZES['1:1']) : (FLASH_1K_SIZES[ar] || FLASH_1K_SIZES['1:1'])
+  const effectiveSize: '1K' | '2K' | '4K' = isProModel ? size : '1K'
+  const multiplier = effectiveSize === '4K' ? 4 : effectiveSize === '2K' ? 2 : 1
+  return { width: base.w * multiplier, height: base.h * multiplier }
 }
 
 function rasterizeMask(maskPaths: PathElement[], baseImage: ImageElement): Promise<{ href: string; mimeType: 'image/png' }> {
@@ -145,24 +181,85 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
             setIsLoading(false)
             return
           }
+          commitAction(prev => prev.map(el => {
+            if (el.id === baseImage.id && el.type === 'image') {
+              return { ...el, isGenerating: true }
+            }
+            return el
+          }))
+          const dbg = typeof window !== 'undefined' ? (localStorage.getItem('debug.gen.fail') || '') : ''
+          if (dbg) {
+            setError(dbg === 'load' ? 'Failed to load the generated image.' : 'Inpainting failed to produce an image.')
+            commitAction(prev => prev.map(el => {
+              if (el.id === baseImage.id && el.type === 'image') {
+                return { ...el, isGenerating: undefined }
+              }
+              return el
+            }))
+            return
+          }
           const result = await editImageWhatai(prompt, [{ href: baseImage.href, mimeType: baseImage.mimeType }], { imageSize, mask: { href: maskData.href, mimeType: maskData.mimeType }, model: imageModel })
           if (result.newImageBase64 && result.newImageMimeType) {
             const { newImageBase64, newImageMimeType } = result
             loadImageWithFallback(newImageBase64, newImageMimeType).then(({ img, href }) => {
               const maskPathIds = new Set(maskPaths.map(p => p.id))
+              try {
+                console.log('[GenPipeline][mask] dims', { before: { width: baseImage.width, height: baseImage.height }, after: { width: img.width, height: img.height } })
+              } catch { void 0 }
               commitAction(prev => prev.map(el => {
                 if (el.id === baseImage.id && el.type === 'image') {
-                  return { ...el, href, width: img.width, height: img.height }
+                  return { ...el, href, width: img.width, height: img.height, isGenerating: undefined }
                 }
                 return el
               }).filter(el => !maskPathIds.has(el.id)))
               setSelectedElementIds([baseImage.id])
-            }).catch(() => setError('Failed to load the generated image.'))
+            }).catch(() => {
+              setError('Failed to load the generated image.')
+              commitAction(prev => prev.map(el => {
+                if (el.id === baseImage.id && el.type === 'image') {
+                  return { ...el, isGenerating: undefined }
+                }
+                return el
+              }))
+            })
           } else {
             setError(result.textResponse || 'Inpainting failed to produce an image.')
+            commitAction(prev => prev.map(el => {
+              if (el.id === baseImage.id && el.type === 'image') {
+                return { ...el, isGenerating: undefined }
+              }
+              return el
+            }))
           }
           return
         }
+        let minX = Infinity, minY = Infinity, maxX = -Infinity
+        selectedElements.forEach(el => {
+          const bounds = getElementBounds(el)
+          minX = Math.min(minX, bounds.x)
+          minY = Math.min(minY, bounds.y)
+          maxX = Math.max(maxX, bounds.x + bounds.width)
+        })
+        let baseWidth = Math.max(1, maxX - minX)
+        let baseHeight = baseWidth
+        if (imageElements.length > 0) {
+          baseWidth = imageElements[0].width
+          baseHeight = imageElements[0].height
+        }
+        const sizeFactor = imageSize === '4K' ? 4 : imageSize === '2K' ? 2 : 1
+        let phWEdit = baseWidth * sizeFactor
+        let phHEdit = baseHeight * sizeFactor
+        const MAX_EDIT_DIM = 4096
+        phWEdit = Math.min(MAX_EDIT_DIM, Math.max(32, phWEdit))
+        phHEdit = Math.min(MAX_EDIT_DIM, Math.max(32, phHEdit))
+        const phXEdit = maxX + 20
+        const phYEdit = minY
+        let placeholderIdEdit: string | null = null
+        placeholderIdEdit = generateId()
+        const placeholderEdit: ImageElement = { id: placeholderIdEdit, type: 'image', x: phXEdit, y: phYEdit, width: phWEdit, height: phHEdit, name: 'Generated Image', href: PLACEHOLDER_DATA_URL, mimeType: 'image/png', borderRadius: getUiRadiusLg(), isGenerating: true, isPlaceholder: true, previewHref: imageElements.length > 0 ? imageElements[0].href : undefined }
+        commitAction(prev => [...prev, placeholderEdit])
+        setSelectedElementIds([placeholderIdEdit])
+
         const imagePromises = selectedElements.map(el => {
           if (el.type === 'image') return Promise.resolve({ href: (el as ImageElement).href, mimeType: (el as ImageElement).mimeType })
           if (el.type === 'video') return Promise.reject(new Error('Cannot use video elements in image generation.'))
@@ -172,24 +269,49 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
         const result = apiProvider === 'Grsai'
           ? await editImageGrsai(prompt, imagesToProcess, { imageSize, model: (imageModel as 'nano-banana-fast' | 'nano-banana-pro') })
           : await editImageWhatai(prompt, imagesToProcess, { imageSize, model: imageModel })
+        {
+          const dbg = typeof window !== 'undefined' ? (localStorage.getItem('debug.gen.fail') || '') : ''
+          if (dbg === 'result') {
+            setError('Generation failed to produce an image.')
+            if (placeholderIdEdit) {
+              commitAction(prev => prev.filter(el => el.id !== placeholderIdEdit))
+            }
+            return
+          }
+          if (dbg === 'load') {
+            const bad = 'data:image/png;base64,'
+            try {
+              await loadImageWithFallback(bad, 'image/png')
+            } catch {
+              setError('Failed to load the generated image.')
+              if (placeholderIdEdit) {
+                commitAction(prev => prev.filter(el => el.id !== placeholderIdEdit))
+              }
+              return
+            }
+          }
+        }
         if (result.newImageBase64 && result.newImageMimeType) {
           const { newImageBase64, newImageMimeType } = result
           loadImageWithFallback(newImageBase64, newImageMimeType).then(({ img, href }) => {
-            let minX = Infinity, minY = Infinity, maxX = -Infinity
-            selectedElements.forEach(el => {
-              const bounds = getElementBounds(el)
-              minX = Math.min(minX, bounds.x)
-              minY = Math.min(minY, bounds.y)
-              maxX = Math.max(maxX, bounds.x + bounds.width)
-            })
-            const x = maxX + 20
-            const y = minY
-            const newImage: ImageElement = { id: generateId(), type: 'image', x, y, name: 'Generated Image', width: img.width, height: img.height, href, mimeType: newImageMimeType }
-            commitAction(prev => [...prev, newImage])
-            setSelectedElementIds([newImage.id])
-          }).catch(() => setError('Failed to load the generated image.'))
+            if (placeholderIdEdit) {
+              try {
+                console.log('[GenPipeline][edit] dims', { placeholder: { width: phWEdit, height: phHEdit }, actual: { width: img.width, height: img.height }, ok: (phWEdit === img.width && phHEdit === img.height) })
+              } catch { void 0 }
+              commitAction(prev => prev.map(el => el.id === placeholderIdEdit ? { ...(el as ImageElement), href, mimeType: newImageMimeType, width: img.width, height: img.height, isGenerating: undefined } : el))
+              setSelectedElementIds([placeholderIdEdit])
+            }
+          }).catch(() => {
+            setError('Failed to load the generated image.')
+            if (placeholderIdEdit) {
+              commitAction(prev => prev.filter(el => el.id !== placeholderIdEdit))
+            }
+          })
         } else {
           setError(result.textResponse || 'Generation failed to produce an image.')
+          if (placeholderIdEdit) {
+            commitAction(prev => prev.filter(el => el.id !== placeholderIdEdit))
+          }
         }
       } else {
         let aspectRatio: string | undefined = undefined
@@ -220,24 +342,67 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
           }
           aspectRatio = best.ar
         }
+
+        const phSize = getPlaceholderSize(imageModel, imageSize, aspectRatio)
+        let placeholderId: string | null = null
+        if (svgRef.current) {
+          const svgBounds = svgRef.current.getBoundingClientRect()
+          const screenCenter = { x: svgBounds.left + svgBounds.width / 2, y: svgBounds.top + svgBounds.height / 2 }
+          const canvasPoint = getCanvasPoint(screenCenter.x, screenCenter.y)
+          const x0 = canvasPoint.x - phSize.width / 2
+          const y0 = canvasPoint.y - phSize.height / 2
+          placeholderId = generateId()
+          const placeholder: ImageElement = { id: placeholderId, type: 'image', x: x0, y: y0, name: 'Generated Image', width: phSize.width, height: phSize.height, href: PLACEHOLDER_DATA_URL, mimeType: 'image/png', borderRadius: getUiRadiusLg(), isGenerating: true, isPlaceholder: true }
+          commitAction(prev => [...prev, placeholder])
+          setSelectedElementIds([placeholderId])
+        }
+
         const result = apiProvider === 'Grsai'
           ? await generateImageFromTextGrsai(prompt, (imageModel as 'nano-banana-fast' | 'nano-banana-pro') || undefined, { aspectRatio, imageSize })
           : await generateImageFromTextWhatai(prompt, imageModel || undefined, { aspectRatio, imageSize })
+        {
+          const dbg = typeof window !== 'undefined' ? (localStorage.getItem('debug.gen.fail') || '') : ''
+          if (dbg === 'result') {
+            setError('Generation failed to produce an image.')
+            if (placeholderId) {
+              commitAction(prev => prev.filter(el => el.id !== placeholderId))
+            }
+            return
+          }
+          if (dbg === 'load') {
+            const bad = 'data:image/png;base64,'
+            try {
+              await loadImageWithFallback(bad, 'image/png')
+            } catch {
+              setError('Failed to load the generated image.')
+              if (placeholderId) {
+                commitAction(prev => prev.filter(el => el.id !== placeholderId))
+              }
+              return
+            }
+          }
+        }
         if (result.newImageBase64 && result.newImageMimeType) {
           const { newImageBase64, newImageMimeType } = result
           loadImageWithFallback(newImageBase64, newImageMimeType).then(({ img, href }) => {
-            if (!svgRef.current) return
-            const svgBounds = svgRef.current.getBoundingClientRect()
-            const screenCenter = { x: svgBounds.left + svgBounds.width / 2, y: svgBounds.top + svgBounds.height / 2 }
-            const canvasPoint = getCanvasPoint(screenCenter.x, screenCenter.y)
-            const x = canvasPoint.x - (img.width / 2)
-            const y = canvasPoint.y - (img.height / 2)
-            const newImage: ImageElement = { id: generateId(), type: 'image', x, y, name: 'Generated Image', width: img.width, height: img.height, href, mimeType: newImageMimeType }
-            commitAction(prev => [...prev, newImage])
-            setSelectedElementIds([newImage.id])
-          }).catch(() => setError('Failed to load the generated image.'))
+            if (placeholderId) {
+              try {
+                console.log('[GenPipeline][text] dims', { placeholder: { width: phSize.width, height: phSize.height }, actual: { width: img.width, height: img.height }, ok: (phSize.width === img.width && phSize.height === img.height) })
+              } catch { void 0 }
+              commitAction(prev => prev.map(el => el.id === placeholderId ? { ...(el as ImageElement), href, mimeType: newImageMimeType, width: img.width, height: img.height, isGenerating: undefined } : el))
+              setSelectedElementIds([placeholderId])
+            }
+          }).catch(() => {
+            setError('Failed to load the generated image.')
+            if (placeholderId) {
+              commitAction(prev => prev.filter(el => el.id !== placeholderId))
+            }
+          })
         } else {
           setError(result.textResponse || 'Generation failed to produce an image.')
+          if (placeholderId) {
+            commitAction(prev => prev.filter(el => el.id !== placeholderId))
+          }
         }
       }
     } catch (err) {

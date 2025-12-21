@@ -5,6 +5,7 @@ import type { Element, ImageElement, Point, Tool } from '@/types'
 import { getElementBounds } from '@/utils/canvas'
 import { fileToDataUrl } from '@/utils/fileUtils'
 import { resizeBase64ToMax, getImageSize, PLACEHOLDER_DATA_URL, getImageSizeFromBlob, resizeBlobToMax } from '@/utils/image'
+import { getUiRadiusLg } from '@/ui/standards'
 
 type Deps = {
   svgRef: MutableRefObject<SVGSVGElement | null>
@@ -74,6 +75,7 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
         height: dims.height,
         href: usedDataUrl,
         mimeType,
+        borderRadius: getUiRadiusLg(),
         opacity: 100,
       }
       setElements(prev => [...prev, newImage])
@@ -198,7 +200,7 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
       const y = startY + rowPrefix[r] + r * gapY + bestOffsetY
       const id = generateId()
       newIds.push(id)
-      newElements.push({ id, type: 'image', name: items[i].file.name, x, y, width: items[i].width, height: items[i].height, href: placeholderHref, mimeType: items[i].mimeType, opacity: 100 })
+      newElements.push({ id, type: 'image', name: items[i].file.name, x, y, width: items[i].width, height: items[i].height, href: placeholderHref, mimeType: items[i].mimeType, borderRadius: getUiRadiusLg(), opacity: 100 })
     }
     setElements(prev => [...prev, ...newElements])
     setSelectedElementIds(newIds)

@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
 import { touchLastSessionPending } from '@/services/boardsStorage';
 import type { Board, Element } from '@/types';
-import { getElementBounds } from '@/utils/canvas';
+import { getElementBounds, computeImageClip } from '@/utils/canvas';
+import type { ImageElement } from '@/types';
 
 type Deps = {
   boards: Board[];
@@ -67,12 +68,16 @@ export function useBoardManager({ boards, activeBoardId, setBoards, setActiveBoa
     if (contentWidth <= 0 || contentHeight <= 0) { const emptySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${THUMB_WIDTH}" height="${THUMB_HEIGHT}"><rect width="100%" height="100%" fill="${bgColor}" /></svg>`; return `data:image/svg+xml;base64,${btoa(emptySvg)}`; }
     const scale = Math.min(THUMB_WIDTH / contentWidth, THUMB_HEIGHT / contentHeight) * 0.9;
     const dx = (THUMB_WIDTH - contentWidth * scale) / 2 - minX * scale; const dy = (THUMB_HEIGHT - contentHeight * scale) / 2 - minY * scale;
+    const clipDefs = elements.filter(el => el.type === 'image').map(el => {
+      const clip = computeImageClip(el as ImageElement, 'thumb_clip_');
+      return clip.r > 0 ? `<clipPath id="${clip.id}"><rect x="${clip.rect.x}" y="${clip.rect.y}" width="${clip.rect.width}" height="${clip.rect.height}" rx="${clip.r}" ry="${clip.r}" /></clipPath>` : '';
+    }).join('');
     const svgContent = elements.map(el => {
       if (el.type === 'path') { const pathData = el.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' '); return `<path d="${pathData}" stroke="${el.strokeColor}" stroke-width="${el.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${el.strokeOpacity || 1}" />`; }
-      if (el.type === 'image') { return `<image href="${el.href}" x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" opacity="${typeof el.opacity === 'number' ? el.opacity / 100 : 1}" />`; }
+      if (el.type === 'image') { const clip = computeImageClip(el as ImageElement, 'thumb_clip_'); const cp = clip.r > 0 ? ` clip-path="url(#${clip.id})"` : ''; return `<image href="${el.href}" x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" opacity="${typeof el.opacity === 'number' ? el.opacity / 100 : 1}"${cp} />`; }
       return '';
     }).join('');
-    const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${THUMB_WIDTH}" height="${THUMB_HEIGHT}"><rect width="100%" height="100%" fill="${bgColor}" /><g transform="translate(${dx} ${dy}) scale(${scale})">${svgContent}</g></svg>`;
+    const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${THUMB_WIDTH}" height="${THUMB_HEIGHT}"><rect width="100%" height="100%" fill="${bgColor}" /><defs>${clipDefs}</defs><g transform="translate(${dx} ${dy}) scale(${scale})">${svgContent}</g></svg>`;
     return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(fullSvg)))}`;
   }, []);
 

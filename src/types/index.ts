@@ -30,6 +30,9 @@ export interface ImageElement extends CanvasElementBase {
   borderRadius?: number;
   // 0-100 scale; 100 means fully opaque
   opacity?: number;
+  isGenerating?: boolean;
+  isPlaceholder?: boolean;
+  previewHref?: string;
 }
 
 export interface VideoElement extends CanvasElementBase {

@@ -290,7 +290,9 @@ async function resizeBase64ToMax(base64: string, mimeType?: string, maxWidth = 2
 
 
 async function whataiFetch(path: string, init: RequestInit): Promise<Response> {
-  const useDevProxy = IS_BROWSER && PROXY_VIA_VITE;
+  let proxyOverride = ''
+  try { proxyOverride = IS_BROWSER ? (localStorage.getItem('PROXY_VIA_VITE') || '') : '' } catch { proxyOverride = '' }
+  const useDevProxy = IS_BROWSER && PROXY_VIA_VITE && proxyOverride !== 'off';
   const proxyUrl = `/proxy-whatai${path}`;
   const directUrl = `${WHATAI_BASE_URL}${path}`;
   const headers = new Headers(init.headers || {});

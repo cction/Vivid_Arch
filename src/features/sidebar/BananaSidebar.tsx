@@ -116,8 +116,13 @@ const resolveIconUrl = (label: string): string | null => {
   return null;
 };
 
+const extImagesEnabled = (() => {
+  if (typeof window === 'undefined') return true;
+  try { return (localStorage.getItem('pod-ext-images') || '') !== 'off'; } catch { return true; }
+})();
+
 const getCardImageSrc = (label: string) => {
-  const photo = resolvePhotoUrl(label);
+  const photo = extImagesEnabled ? resolvePhotoUrl(label) : null;
   if (photo) return photo;
   const icon = resolveIconUrl(label);
   if (icon) return icon;

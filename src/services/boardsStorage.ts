@@ -200,7 +200,7 @@ export async function saveLastSession(payload: { boards: Board[]; activeBoardId:
 
   {
     const picked = pickRecentBoards(payload, 5)
-    const slimmed = await Promise.all(picked.boards.map(b => slimBoardAsync(b)))
+    const slimmed = await Promise.all(picked.boards.map(b => slimBoardAsync(b, slimElement)))
     await ensureDirs()
     const { fs, path } = await serverModules()
     const base = getBaseDir()
