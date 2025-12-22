@@ -3,6 +3,7 @@ import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import type { Element, ImageElement, Point } from '@/types';
 import { getElementBounds, computeImageClip } from '@/utils/canvas';
 import { SelectionOverlay } from '@/components/SelectionOverlay';
+import { ImageResolution } from '@/components/ImageResolution';
 import { PLACEHOLDER_DATA_URL } from '@/utils/image';
 import { getUiRadiusLg } from '@/ui/standards';
 type Rect = { x: number; y: number; width: number; height: number };
@@ -253,6 +254,16 @@ export const Canvas: React.FC<CanvasProps> = ({
                   opacity={typeof el.opacity === 'number' ? el.opacity / 100 : 1}
                   clipPath={hasR ? `url(#${cid})` : undefined}
                 />
+                {isSelected && !croppingState && (
+                  <g transform={`translate(${el.x}, ${el.y})`}>
+                    <ImageResolution
+                      href={el.href}
+                      width={el.width}
+                      height={el.height}
+                      zoom={zoom}
+                    />
+                  </g>
+                )}
                 {showSpinner && spinnerR > 0 && (
                   <g transform={`translate(${el.x + el.width / 2}, ${el.y + el.height / 2})`}>
                     <svg

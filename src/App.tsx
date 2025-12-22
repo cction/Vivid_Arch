@@ -531,6 +531,7 @@ const App: React.FC = () => {
             <BottomBar 
                 t={t}
                 onFitToWindow={handleFitToWindow}
+                onOpenSettings={() => setIsSettingsPanelOpen(true)}
             />
 
             <div className="fixed bottom-4 left-4 z-50">
