@@ -1,6 +1,97 @@
 # BananaPod 项目状态记录
 
 
+## 当前阶段：图层合并导出断图与线宽不一致修复（规划者）
+
+### 背景和动机
+
+- 现状：执行“合并图层”后，新生成的图片出现“图片加载错误图标”，不显示合并结果内容；同时当图像与图形/线条一起合并时，合并后的形状描边粗细与当前画布显示不一致（用户感知为“变细”）。
+- 影响：
+  - 合并功能不可用或不可预期，阻断常用工作流（将多元素压平成一张图）。
+  - 影响编辑一致性：用户在某一缩放比例下看到的线条粗细，合并后变成位图再显示会产生明显差异。
+
+### 关键挑战和分析（本阶段）
+
+- 断图（出现加载错误图标）的根因假设：
+  - 合并流程通过“拼 SVG → 以 `data:image/svg+xml` 方式加载 → 绘制到 canvas → 导出 PNG”实现。
+  - 如果拼出来的 SVG 内部 `<image href="...">` 引用了 `blob:`/部分 `http(s)` 资源，在 `data:` SVG 的环境下可能无法被浏览器正确加载（origin / CORS / URL scheme 兼容性），从而在最终导出的 PNG 中表现为断图占位图标。
+- 图片内容显示错误（即使不断图也可能错位）的根因假设：
+  - 画布渲染图片时使用 `preserveAspectRatio="none"`（拉伸填充），而合并拼 SVG 的 `<image>` 若未显式设置该属性，会使用 SVG 默认行为（保持宽高比），导致合并结果与画布显示不一致。
+- 线宽不一致（“变细”）的根因假设：
+  - 画布显示为了缩放时保持视觉线宽稳定，采用 `strokeWidth / zoom`。
+  - 合并导出时若直接使用 `strokeWidth`，在当前 zoom 下导出的位图与画布显示会存在差异（合并当下的视觉线宽不一致）。
+
+### 本阶段高层任务拆分
+
+1. 复现与最小化用例构建
+   - 用包含 `blob:` 图片的场景复现“合并后断图”。
+   - 用非等比拉伸的图片复现“合并后内容错位/显示不一致”。
+   - 用不同 zoom（例如 0.5 / 1 / 2）复现“线宽不一致”。
+   - 成功标准：能稳定复现并可用日志/异常信息定位失败路径。
+
+2. 修复：合并导出中内联图片资源，避免断图
+   - 在合并拼 SVG 前，将所有 `image.href` 尽可能转换为 `data:` URL（`hrefToBlob` → `blobToDataUrl`），写入 SVG 的 `<image href="...">`。
+   - 内联失败时输出必要调试信息（`id/href/error`），并使用原 href 作为 fallback（便于继续定位跨域/协议问题）。
+   - 成功标准：包含 `blob:` 图片的合并结果不再出现断图图标。
+
+3. 修复：对齐图片拉伸规则
+   - 合并拼 SVG 时，对 `<image>` 显式设置 `preserveAspectRatio="none"`，与画布渲染保持一致。
+   - 成功标准：用户把图片拉伸后合并，合并结果内容与画布显示一致。
+
+4. 修复：对齐合并当下的线宽显示
+   - 为 `flattenElementsToImage` 增加可选参数 `{ zoom }`，在拼 SVG 的 `path/shape/line/arrow` 里使用 `strokeWidth / zoom`，确保合并当下与当前画布显示一致。
+   - 在 `useLayerMerge` / `App.tsx` 传入当前 `zoom`。
+   - 成功标准：在任意 zoom 下执行合并，合并生成图片中的线条粗细与合并前当前视图一致。
+
+5. 验证与回归
+   - 手动验证：
+     - `blob:` 图片 + 图形/线条合并不再断图。
+     - 非等比拉伸图片合并后显示一致。
+     - 多缩放比例下合并当下线宽一致。
+   - 命令验证：
+     - `npm run lint`
+     - `npx tsc --noEmit`（如项目采用该命令）
+
+### 项目状态看板（图层合并修复）
+
+#### 已完成
+
+- [x] 初步定位：合并通过 data:SVG 渲染，存在引用资源失败风险。
+- [x] 初步定位：图片拉伸规则与 SVG 默认行为可能不一致。
+- [x] 初步定位：画布显示使用 `strokeWidth / zoom`，合并导出未对齐。
+
+#### 进行中
+
+- [x] 在 `flattenElementsToImage` 中内联图片 href 为 dataURL，并记录调试日志。
+- [x] 在合并拼 SVG 的 `<image>` 设置 `preserveAspectRatio="none"`。
+- [x] 传入当前 `zoom` 并对齐合并当下线宽（`strokeWidth / zoom`）。
+- [x] 完成手动验证并运行 `npm run lint`、`npx tsc --noEmit`。
+
+#### 待办
+
+- [ ] 若内联失败来自跨域图片，评估导入阶段强制转 dataURL 或引入代理策略。
+
+### 执行者反馈或请求帮助（本阶段约定）
+
+- 执行者在每次落地一个任务后，补充：
+  - 涉及文件与改动摘要（例如 `src/utils/canvas.ts`、`src/hooks/useLayerMerge.ts`、`src/App.tsx`）。
+  - Console/Network 关键信息（例如 `[flattenElementsToImage] inline image failed` 的 payload）。
+  - 已运行的命令与结果（lint/typecheck）。
+- 本轮执行者记录：
+  - 已确认 `flattenElementsToImage` 内联图片 href 为 dataURL、为 `<image>` 设置 `preserveAspectRatio="none"`，并在 `path/shape/arrow/line` 中按 `strokeWidth / zoom` 对齐线宽（涉及 `src/utils/canvas.ts`）。
+  - 已确认 `useLayerMerge` 与 `App.tsx` 通过 `zoom` 参数将当前缩放传入 `flattenElementsToImage`（涉及 `src/hooks/useLayerMerge.ts`、`src/App.tsx`）。
+  - 已运行 `npm run lint`、`npx tsc --noEmit`，均成功通过，无新增错误。
+
+### 当前状态/进度跟踪（图层合并修复）
+
+- 规划者：
+  - 已明确两类核心问题：合并断图（资源加载失败）与显示不一致（图片拉伸规则/线宽与 zoom 机制不一致）。
+  - 已给出修复方向：图片资源内联为 dataURL + `<image preserveAspectRatio="none">` + `strokeWidth/zoom` 对齐。
+- 执行者（本轮实现）：
+  - 已按“进行中”四项计划完成实现与验证；如后续发现跨域图片仍存在极端断图场景，可在“待办”任务中继续迭代导入阶段策略。
+
+---
+
 ## 当前阶段：生成按钮与生图取消能力改造（规划者）
 
 ### 背景和动机

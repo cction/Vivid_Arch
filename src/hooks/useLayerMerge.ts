@@ -9,11 +9,14 @@ type Deps = {
   selectedElementIds: string[];
   getDescendants: (id: string, all: Element[]) => Element[];
   commitAction: (updater: (prev: Element[]) => Element[]) => void;
+  setSelectedElementIds: Dispatch<SetStateAction<string[]>>;
   generateId: () => string;
   setError: Dispatch<SetStateAction<string | null>>;
 };
 
-export function useLayerMerge({ elementsRef, selectedElementIds, getDescendants, commitAction, generateId, setError }: Deps) {
+type DepsWithZoom = Deps & { zoom: number };
+
+export function useLayerMerge({ elementsRef, selectedElementIds, getDescendants, commitAction, setSelectedElementIds, generateId, setError, zoom }: DepsWithZoom) {
   const handleMergeLayers = useCallback(async (mode: 'selected' | 'visible') => {
     const all = elementsRef.current;
     let idsToMerge = new Set<string>();
@@ -40,9 +43,10 @@ export function useLayerMerge({ elementsRef, selectedElementIds, getDescendants,
     if (elementsToFlatten.length === 0) return;
 
     try {
-      const flattened = await flattenElementsToImage(elementsToFlatten);
+      const flattened = await flattenElementsToImage(elementsToFlatten, { zoom });
+      const newImageId = generateId();
       const newImage: ImageElement = {
-        id: generateId(),
+        id: newImageId,
         type: 'image',
         name: 'Merged Image',
         x: flattened.x,
@@ -59,11 +63,12 @@ export function useLayerMerge({ elementsRef, selectedElementIds, getDescendants,
         const keep = prev.filter(el => !idsToMerge.has(el.id));
         return [...keep, newImage];
       });
+      setSelectedElementIds([newImageId]);
     } catch (e) {
       console.error(e);
       setError('合并图层失败：' + (e as Error).message);
     }
-  }, [elementsRef, selectedElementIds, getDescendants, commitAction, generateId, setError]);
+  }, [elementsRef, selectedElementIds, getDescendants, commitAction, setSelectedElementIds, generateId, setError, zoom]);
 
   return { handleMergeLayers };
 }

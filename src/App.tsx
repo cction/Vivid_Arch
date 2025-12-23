@@ -255,7 +255,7 @@ const App: React.FC = () => {
 
     const { updateActiveBoard, updateActiveBoardSilent, setElements, commitAction, handleUndo, handleRedo, getDescendants } = useBoardActions(activeBoardId, setBoards);
 
-    const { handleMergeLayers } = useLayerMerge({ elementsRef, selectedElementIds, getDescendants, commitAction, generateId, setError });
+    const { handleMergeLayers } = useLayerMerge({ elementsRef, selectedElementIds, getDescendants, commitAction, setSelectedElementIds, generateId, setError, zoom });
 
     const { croppingState, setCroppingState, cropAspectRatio, handleCropAspectRatioChange, handleStartCrop, handleCancelCrop, handleConfirmCrop } = useCrop({ setActiveTool, elementsRef, commitAction, setError });
 
