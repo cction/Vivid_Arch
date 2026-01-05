@@ -33,6 +33,12 @@ export interface ImageElement extends CanvasElementBase {
   isGenerating?: boolean;
   isPlaceholder?: boolean;
   previewHref?: string;
+  
+  // Generation task info (persisted)
+  genProvider?: 'Grsai' | 'WHATAI';
+  genTaskId?: string;
+  genStatus?: 'creating' | 'generating' | 'retrying' | 'pending' | 'timeout' | 'failed';
+  genError?: string;
 }
 
 export interface VideoElement extends CanvasElementBase {

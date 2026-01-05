@@ -40,6 +40,7 @@ interface CanvasProps {
   onDragOver?: (e: React.DragEvent) => void;
   onDragLeave?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
+  onRetryGenerate?: (elementId: string) => void;
 }
 export const Canvas: React.FC<CanvasProps> = ({
   svgRef,
@@ -73,12 +74,14 @@ export const Canvas: React.FC<CanvasProps> = ({
   onDragOver,
   onDragLeave,
   onDrop,
+  onRetryGenerate,
 }) => {
   const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1
   const safePanOffset: Point = {
     x: Number.isFinite(panOffset.x) ? panOffset.x : 0,
     y: Number.isFinite(panOffset.y) ? panOffset.y : 0,
   }
+  const failureOverlays: React.ReactNode[] = [];
   const isElementVisible = (element: Element, allElements: Element[]): boolean => {
     if (element.isVisible === false) return false;
     if (element.parentId) {
@@ -88,22 +91,23 @@ export const Canvas: React.FC<CanvasProps> = ({
     return true;
   };
   return (
-    <svg
-      ref={svgRef}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onContextMenu={handleContextMenu}
-      onDragOverCapture={(e) => { e.preventDefault(); if ((e as React.DragEvent).dataTransfer) (e as React.DragEvent).dataTransfer.dropEffect = 'copy'; }}
-      onDropCapture={(e) => { e.preventDefault(); }}
-      onDragEnter={onDragEnter}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      style={{ '--canvas-cursor': cursor, '--canvas-bg': canvasBackgroundColor } as React.CSSProperties}
-      className="w-full h-full pod-canvas-root"
-    >
+    <div className="w-full h-full relative">
+      <svg
+        ref={svgRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onContextMenu={handleContextMenu}
+        onDragOverCapture={(e) => { e.preventDefault(); if ((e as React.DragEvent).dataTransfer) (e as React.DragEvent).dataTransfer.dropEffect = 'copy'; }}
+        onDropCapture={(e) => { e.preventDefault(); }}
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        style={{ '--canvas-cursor': cursor, '--canvas-bg': canvasBackgroundColor } as React.CSSProperties}
+        className="w-full h-full pod-canvas-root"
+      >
       <defs>
         <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
           <circle cx="1.5" cy="1.5" r="1.5" className="pod-grid-dot" />
@@ -203,6 +207,120 @@ export const Canvas: React.FC<CanvasProps> = ({
             const spinnerR = Math.min(Math.min(el.width, el.height) / 4, 12 / z);
 
             if (isPh) {
+              const genStatus = imgEl.genStatus;
+              const isFailed = genStatus === 'failed' || genStatus === 'timeout';
+              const showFailureOverlay = isFailed && !showSpinner;
+
+              if (showFailureOverlay) {
+                const centerX = (el.x + el.width / 2) * z + safePanOffset.x;
+                const centerY = (el.y + el.height / 2) * z + safePanOffset.y;
+                failureOverlays.push(
+                  <div
+                    key={`failure-${imgEl.id}`}
+                    style={{
+                      position: 'absolute',
+                      left: `${centerX}px`,
+                      top: `${centerY}px`,
+                      transform: 'translate(-50%, -50%)',
+                      width: '180px',
+                      height: '140px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      pointerEvents: 'none',
+                      zIndex: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        pointerEvents: 'auto',
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '12px',
+                        boxSizing: 'border-box',
+                        color: '#F9FAFB',
+                        fontSize: '12px',
+                        textAlign: 'center',
+                        backgroundColor: 'rgba(31, 24, 55, 0.55)',
+                        borderRadius: '12px',
+                        border: 'none',
+                        backdropFilter: 'blur(16px)',
+                        WebkitBackdropFilter: 'blur(16px)',
+                        boxShadow: '0 12px 30px rgba(0, 0, 0, 0.45)',
+                      }}
+                    >
+                      <div style={{ marginBottom: 4, fontWeight: 600, color: '#FCA5A5' }}>
+                        {genStatus === 'timeout' ? '生成超时' : '生成失败'}
+                      </div>
+                      <div
+                        style={{
+                          marginBottom: 8,
+                          opacity: 0.9,
+                          fontSize: '11px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          lineHeight: '1.3',
+                        }}
+                      >
+                        {imgEl.genError || '未知错误'}
+                      </div>
+                      {imgEl.genProvider === 'Grsai' && imgEl.genTaskId && (
+                        <>
+                          <div
+                            style={{
+                              marginBottom: 8,
+                              fontFamily: 'monospace',
+                              fontSize: '10px',
+                              opacity: 0.7,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            ID: {imgEl.genTaskId}
+                          </div>
+                          <button
+                            style={{
+                              pointerEvents: 'auto',
+                              padding: '6px 16px',
+                              backgroundColor: 'var(--brand-primary, #C5AEF6)',
+                              color: '#111827',
+                              border: 'none',
+                              borderRadius: '9999px',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              marginTop: '2px',
+                              whiteSpace: 'nowrap',
+                              boxShadow: '0 8px 20px rgba(0,0,0,0.45)',
+                              transition: 'background-color 0.15s ease-out, transform 0.15s ease-out',
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              if (onRetryGenerate) onRetryGenerate(imgEl.id);
+                            }}
+                            onMouseEnter={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#E5D5FF';
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.backgroundColor =
+                                'var(--brand-primary, #C5AEF6)';
+                            }}
+                          >
+                            重新获取
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <g key={el.id} data-id={el.id} className="cursor-pointer">
                   <rect
@@ -240,6 +358,64 @@ export const Canvas: React.FC<CanvasProps> = ({
                         <rect x="-40" y="0" width="80" height="24" rx="12" fill="#171717" fillOpacity="0.9" stroke="white" strokeOpacity="0.1" strokeWidth="1" />
                         <text x="0" y="16" textAnchor="middle" fill="white" fillOpacity="0.9" fontSize="11" fontWeight="500" style={{ pointerEvents: 'none', userSelect: 'none', fontFamily: 'system-ui, -apple-system, sans-serif' }}>Generating...</text>
                       </g>
+                    </g>
+                  )}
+                  {showFailureOverlay && (
+                    <g transform={`translate(${el.x + el.width / 2}, ${el.y + el.height / 2}) scale(${1 / z})`}>
+                      <foreignObject x="-90" y="-70" width="180" height="140" style={{ pointerEvents: 'none' }}>
+                        <div style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '12px',
+                          boxSizing: 'border-box',
+                          color: '#EF4444',
+                          fontSize: '12px',
+                          textAlign: 'center',
+                          backgroundColor: 'rgba(50, 35, 90, 0.8)',
+                          borderRadius: '12px',
+                          border: '1px solid rgba(197, 174, 246, 0.2)',
+                          backdropFilter: 'blur(12px)'
+                        }}>
+                          <div style={{ marginBottom: 4, fontWeight: 600 }}>
+                            {genStatus === 'timeout' ? '生成超时' : '生成失败'}
+                          </div>
+                          <div style={{ marginBottom: 8, opacity: 0.8, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>
+                            {imgEl.genError || '未知错误'}
+                          </div>
+                          {imgEl.genProvider === 'Grsai' && imgEl.genTaskId && (
+                            <>
+                              <div style={{ marginBottom: 8, fontFamily: 'monospace', fontSize: '10px', opacity: 0.6 }}>
+                                ID: {imgEl.genTaskId.slice(0, 8)}...
+                              </div>
+                              <button
+                                style={{
+                                  pointerEvents: 'auto',
+                                  padding: '6px 16px',
+                                  backgroundColor: 'var(--brand-primary, #3B82F6)',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '11px',
+                                  cursor: 'pointer',
+                                  marginTop: '2px',
+                                  whiteSpace: 'nowrap'
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (onRetryGenerate) onRetryGenerate(imgEl.id);
+                                }}
+                              >
+                                重新获取
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </foreignObject>
                     </g>
                   )}
                   {selectionComponent}
@@ -327,9 +503,10 @@ export const Canvas: React.FC<CanvasProps> = ({
           handleStartCrop={handleStartCrop}
           handlePropertyChange={handlePropertyChange}
           handleDeleteElement={handleDeleteElement}
-          handleStopEditing={handleStopEditing}
         />
       </g>
-    </svg>
+      </svg>
+      {failureOverlays}
+    </div>
   );
 };

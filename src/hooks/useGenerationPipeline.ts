@@ -5,7 +5,7 @@ import { rasterizeElement, getElementBounds } from '@/utils/canvas'
 import { loadImageWithFallback, PLACEHOLDER_DATA_URL } from '@/utils/image'
 import { editImage as editImageWhatai, generateImageFromText as generateImageFromTextWhatai, generateVideo } from '@/services/api/geminiService'
 import { getUiRadiusLg } from '@/ui/standards'
-import { editImage as editImageGrsai, generateImageFromText as generateImageFromTextGrsai } from '@/services/api/grsaiService'
+import { editImage as editImageGrsai, generateImageFromText as generateImageFromTextGrsai, type GrsaiResult } from '@/services/api/grsaiService'
 
 type Deps = {
   svgRef: MutableRefObject<SVGSVGElement | null>
@@ -400,9 +400,27 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
             }
           })
         } else {
-          safeSetError(result.textResponse || 'Generation failed to produce an image.')
+          const errorMsg = result.textResponse || (result as { error?: string }).error || 'Generation failed to produce an image.'
+          safeSetError(errorMsg)
           if (placeholderIdEdit) {
-            safeCommitAction(prev => prev.filter(el => el.id !== placeholderIdEdit))
+            safeCommitAction(prev => prev.map(el => {
+              if (el.id === placeholderIdEdit) {
+                const base: ImageElement = {
+                  ...(el as ImageElement),
+                  isGenerating: undefined,
+                  genProvider: apiProvider === 'Grsai' ? 'Grsai' : 'WHATAI',
+                  genStatus: 'failed',
+                  genError: errorMsg,
+                }
+                if (apiProvider === 'Grsai') {
+                  const gRes = result as GrsaiResult
+                  if (gRes.taskId) base.genTaskId = gRes.taskId
+                  if (gRes.status === 'timeout') base.genStatus = 'timeout'
+                }
+                return base
+              }
+              return el
+            }))
           }
         }
       } else {
@@ -489,9 +507,27 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
             }
           })
         } else {
-          safeSetError(result.textResponse || 'Generation failed to produce an image.')
+          const errorMsg = result.textResponse || (result as { error?: string }).error || 'Generation failed to produce an image.'
+          safeSetError(errorMsg)
           if (placeholderId) {
-            safeCommitAction(prev => prev.filter(el => el.id !== placeholderId))
+            safeCommitAction(prev => prev.map(el => {
+              if (el.id === placeholderId) {
+                const base: ImageElement = {
+                  ...(el as ImageElement),
+                  isGenerating: undefined,
+                  genProvider: apiProvider === 'Grsai' ? 'Grsai' : 'WHATAI',
+                  genStatus: 'failed',
+                  genError: errorMsg,
+                }
+                if (apiProvider === 'Grsai') {
+                  const gRes = result as GrsaiResult
+                  if (gRes.taskId) base.genTaskId = gRes.taskId
+                  if (gRes.status === 'timeout') base.genStatus = 'timeout'
+                }
+                return base
+              }
+              return el
+            }))
           }
         }
       }

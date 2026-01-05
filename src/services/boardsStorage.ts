@@ -112,6 +112,11 @@ async function slimElement(el: Element): Promise<Element> {
       parentId: img.parentId,
       borderRadius: img.borderRadius,
       opacity: img.opacity,
+      // Persist generation task info so we can retry/show error after refresh
+      genProvider: img.genProvider,
+      genTaskId: img.genTaskId,
+      genStatus: img.genStatus,
+      genError: img.genError,
     }
     return next
   }

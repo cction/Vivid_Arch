@@ -565,7 +565,7 @@ export function useCanvasInteraction(deps: Deps) {
         const rafId = requestAnimationFrame(() => {
           setWheelRaf(null); const last = wheelLastEventRef.current; if (!last) return;
           if (last.ctrlKey || wheelAction === 'zoom') {
-            const zoomFactor = 1.05; const oldZoom = zoom; const newZoom = last.deltaY < 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor; const clampedZoom = Math.max(0.1, Math.min(newZoom, 10));
+            const zoomFactor = 1.05; const oldZoom = zoom; const newZoom = last.deltaY < 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor; const clampedZoom = Math.max(0.02, Math.min(newZoom, 40));
             const mousePoint = { x: last.clientX, y: last.clientY };
             const newPanX = mousePoint.x - (mousePoint.x - panOffset.x) * (clampedZoom / oldZoom);
             const newPanY = mousePoint.y - (mousePoint.y - panOffset.y) * (clampedZoom / oldZoom);

@@ -150,7 +150,16 @@ function extractErrorMessage(raw: { [k: string]: unknown }): string {
   return ''
 }
 
-async function parseImageJson(json: { data?: unknown; results?: ImageItem[]; [k: string]: unknown }, usedModel: string): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
+export interface GrsaiResult {
+  newImageBase64: string | null;
+  newImageMimeType: string | null;
+  textResponse: string | null;
+  status?: 'succeeded' | 'failed' | 'timeout' | 'pending';
+  taskId?: string;
+  error?: string;
+}
+
+async function parseImageJson(json: { data?: unknown; results?: ImageItem[]; [k: string]: unknown }, usedModel: string, taskId?: string): Promise<GrsaiResult> {
   let item: ImageItem | undefined
   if (json && Array.isArray((json as { data?: ImageItem[] }).data)) item = (json as { data?: ImageItem[] }).data![0]
   else if (json && Array.isArray(json.results)) item = json.results[0]
@@ -161,7 +170,7 @@ async function parseImageJson(json: { data?: unknown; results?: ImageItem[]; [k:
   if (item?.b64_json) {
     const base64 = normalizeBase64(stripBase64Header(String(item.b64_json)))
     const mime = detectMimeFromBase64(base64)
-    return { newImageBase64: base64, newImageMimeType: mime, textResponse: `使用 ${usedModel} 模型成功生成图像` }
+    return { newImageBase64: base64, newImageMimeType: mime, textResponse: `使用 ${usedModel} 模型成功生成图像`, status: 'succeeded', taskId }
   }
   if (item?.url) {
     let lastError: Error | null = null
@@ -175,7 +184,7 @@ async function parseImageJson(json: { data?: unknown; results?: ImageItem[]; [k:
           let base64 = (reader.result as string).split(',')[1]
           base64 = normalizeBase64(base64)
           const mime = blob.type && blob.type.startsWith('image/') ? blob.type : detectMimeFromBase64(base64)
-          resolve({ newImageBase64: base64, newImageMimeType: mime, textResponse: `使用 ${usedModel} 模型成功生成图像` })
+          resolve({ newImageBase64: base64, newImageMimeType: mime, textResponse: `使用 ${usedModel} 模型成功生成图像`, status: 'succeeded', taskId })
         }
         reader.readAsDataURL(blob)
       })
@@ -183,13 +192,13 @@ async function parseImageJson(json: { data?: unknown; results?: ImageItem[]; [k:
       lastError = err instanceof Error ? err : new Error(String(err))
     }
     if (lastError) {
-      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：无法获取生成结果 (${lastError.message})` }
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：无法获取生成结果 (${lastError.message})`, status: 'failed', taskId, error: lastError.message }
     }
   }
-  return { newImageBase64: null, newImageMimeType: null, textResponse: '图像生成失败：未找到输出' }
+  return { newImageBase64: null, newImageMimeType: null, textResponse: '图像生成失败：未找到输出', status: 'failed', taskId, error: '未找到输出' }
 }
 
-async function pollDrawResult(id: string, responseFormat: 'url' | 'b64_json', usedModel: string): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
+async function pollDrawResult(id: string, responseFormat: 'url' | 'b64_json', usedModel: string): Promise<GrsaiResult> {
   const lower = (usedModel || '').toLowerCase()
   const isPro = lower.includes('pro') || lower.endsWith('-2')
   const maxTries = isPro ? 60 : 25
@@ -201,23 +210,47 @@ async function pollDrawResult(id: string, responseFormat: 'url' | 'b64_json', us
     if (!ct.includes('application/json')) throw new Error(`非 JSON 返回 (${ct}) ${text.slice(0,200)}`)
     const json = JSON.parse(text) as { code?: number; msg?: string; error?: string; data?: { results?: ImageItem[]; status?: string; progress?: number; error?: string; failure_reason?: string } }
     const hasResults = json && json.data && Array.isArray(json.data.results) && json.data.results.length > 0
-    if (hasResults) return parseImageJson(json as { data?: { results?: ImageItem[] }; [k: string]: unknown }, usedModel)
+    if (hasResults) return parseImageJson(json as { data?: { results?: ImageItem[] }; [k: string]: unknown }, usedModel, id)
     const status = json && json.data && json.data.status
     const errMsg = (json && (json.error || '')) || (json && json.data && (json.data.error || json.data.failure_reason || '')) || ''
-    if (status === 'failed') return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${errMsg || '未知错误'}` }
+    if (status === 'failed') return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${errMsg || '未知错误'}`, status: 'failed', taskId: id, error: errMsg || '未知错误' }
     await new Promise((resolve) => setTimeout(resolve, delayMs))
   }
-  throw new Error('获取结果超时')
+  return { newImageBase64: null, newImageMimeType: null, textResponse: '图像生成失败：获取结果超时', status: 'timeout', taskId: id, error: '获取结果超时' }
+}
+
+export async function getDrawResultOnce(taskId: string): Promise<GrsaiResult> {
+  try {
+    const resp = await grsaiFetch('/v1/draw/result', { method: 'POST', body: JSON.stringify({ id: taskId }) })
+    const ct = resp.headers.get('content-type') || ''
+    const text = await resp.text()
+    if (!ct.includes('application/json')) return { newImageBase64: null, newImageMimeType: null, textResponse: `非 JSON 返回 (${ct})`, status: 'failed', taskId, error: `非 JSON 返回 (${ct})` }
+    const json = JSON.parse(text) as { code?: number; msg?: string; error?: string; data?: { results?: ImageItem[]; status?: string; progress?: number; error?: string; failure_reason?: string } }
+    const hasResults = json && json.data && Array.isArray(json.data.results) && json.data.results.length > 0
+    if (hasResults) return parseImageJson(json as { data?: { results?: ImageItem[] }; [k: string]: unknown }, 'unknown', taskId)
+    
+    const status = json && json.data && json.data.status
+    const errMsg = (json && (json.error || '')) || (json && json.data && (json.data.error || json.data.failure_reason || '')) || ''
+    
+    if (status === 'failed') {
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${errMsg || '未知错误'}`, status: 'failed', taskId, error: errMsg || '未知错误' }
+    }
+    // pending or processing
+    return { newImageBase64: null, newImageMimeType: null, textResponse: '仍在生成中', status: 'pending', taskId }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { newImageBase64: null, newImageMimeType: null, textResponse: `查询失败: ${msg}`, status: 'failed', taskId, error: msg }
+  }
 }
 
 export async function generateImageFromText(
   prompt: string,
   model?: 'nano-banana' | 'nano-banana-fast' | 'nano-banana-pro' | 'nano-banana-pro-cl',
   opts?: { aspectRatio?: string; imageSize?: '1K' | '2K' | '4K'; responseFormat?: 'url' | 'b64_json' }
-): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }>
+): Promise<GrsaiResult>
 {
   if (!isGrsaiEnabled()) {
-    return { newImageBase64: null, newImageMimeType: null, textResponse: 'grsai API 未配置或未启用' }
+    return { newImageBase64: null, newImageMimeType: null, textResponse: 'grsai API 未配置或未启用', status: 'failed', error: 'API not enabled' }
   }
   try {
     const usedModel = model || 'nano-banana-fast'
@@ -243,16 +276,16 @@ export async function generateImageFromText(
       return await pollDrawResult(id, 'url', usedModel)
     }
     if (errText) {
-      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${errText}` }
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${errText}`, status: 'failed', error: errText }
     }
     try {
       const preview = text.length > 240 ? `${text.slice(0, 240)}...[truncated ${text.length - 240} chars]` : text
       console.debug('[grsai generateImageFromText] no results and no id', { usedModel, preview })
     } catch { void 0 }
-    return { newImageBase64: null, newImageMimeType: null, textResponse: '图像生成失败：未找到输出' }
+    return { newImageBase64: null, newImageMimeType: null, textResponse: '图像生成失败：未找到输出', status: 'failed', error: '未找到输出' }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败: ${msg}` }
+    return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败: ${msg}`, status: 'failed', error: msg }
   }
 }
 
@@ -262,10 +295,10 @@ export async function editImage(
   prompt: string,
   images: ImageInput[],
   opts?: { aspectRatio?: string; imageSize?: '1K' | '2K' | '4K'; responseFormat?: 'url' | 'b64_json'; model?: 'nano-banana' | 'nano-banana-fast' | 'nano-banana-pro' | 'nano-banana-pro-cl' }
-): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }>
+): Promise<GrsaiResult>
 {
   if (!isGrsaiEnabled()) {
-    return { newImageBase64: null, newImageMimeType: null, textResponse: 'grsai API 未配置或未启用' }
+    return { newImageBase64: null, newImageMimeType: null, textResponse: 'grsai API 未配置或未启用', status: 'failed', error: 'API not enabled' }
   }
   try {
     const usedModel = opts?.model || 'nano-banana-fast'
@@ -303,16 +336,16 @@ export async function editImage(
       return await pollDrawResult(id, 'url', usedModel)
     }
     if (errText) {
-      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像编辑失败：${errText}` }
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像编辑失败：${errText}`, status: 'failed', error: errText }
     }
     try {
       const preview = text.length > 240 ? `${text.slice(0, 240)}...[truncated ${text.length - 240} chars]` : text
       console.debug('[grsai editImage] no results and no id', { usedModel, preview })
     } catch { void 0 }
-    return { newImageBase64: null, newImageMimeType: null, textResponse: '图像编辑失败：未找到输出' }
+    return { newImageBase64: null, newImageMimeType: null, textResponse: '图像编辑失败：未找到输出', status: 'failed', error: '未找到输出' }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    return { newImageBase64: null, newImageMimeType: null, textResponse: `图像编辑失败: ${msg}` }
+    return { newImageBase64: null, newImageMimeType: null, textResponse: `图像编辑失败: ${msg}`, status: 'failed', error: msg }
   }
 }
 

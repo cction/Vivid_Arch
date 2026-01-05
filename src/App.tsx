@@ -29,6 +29,8 @@ import { useUiTheme } from '@/hooks/useUiTheme';
 import { useCredentials } from '@/hooks/useCredentials';
 import { useElementOps } from '@/hooks/useElementOps';
 import { useCanvasCoords } from '@/hooks/useCanvasCoords';
+import { getDrawResultOnce, GrsaiResult } from '@/services/api/grsaiService';
+import { loadImageWithFallback } from '@/utils/image';
 import { PodUIPreview } from '@/components/PodUIPreview';
 import { PodButton } from '@/components/podui';
 import { getElementBounds } from '@/utils/canvas';
@@ -344,6 +346,77 @@ const App: React.FC = () => {
 
     const { handleAddBoard, handleDuplicateBoard, handleDeleteBoard, handleRenameBoard, handleSwitchBoard, handleCanvasBackgroundColorChange, generateBoardThumbnail } = useBoardManager({ boards, activeBoardId, setBoards, setActiveBoardId, updateActiveBoard, generateId });
 
+    const handleRetryGenerate = async (elementId: string) => {
+        const el = elementsRef.current.find(e => e.id === elementId);
+        if (!el || el.type !== 'image' || !el.genTaskId || el.genProvider !== 'Grsai') return;
+
+        commitAction(prev => prev.map(e => {
+            if (e.id === elementId) {
+                return { ...e, genStatus: 'pending', genError: undefined } as ImageElement;
+            }
+            return e;
+        }));
+
+        try {
+            const result = await getDrawResultOnce(el.genTaskId);
+            
+            if (result.status === 'succeeded' && result.newImageBase64) {
+                 try {
+                     const { img, href } = await loadImageWithFallback(result.newImageBase64, result.newImageMimeType || 'image/png');
+                     commitAction(prev => prev.map(e => {
+                         if (e.id === elementId) {
+                             const base = { ...e } as ImageElement;
+                             base.href = href;
+                             base.mimeType = result.newImageMimeType || 'image/png';
+                             base.width = img.width;
+                             base.height = img.height;
+                             // Clear generation flags on success
+                             base.genStatus = undefined;
+                             base.genError = undefined;
+                             base.genTaskId = undefined;
+                             base.genProvider = undefined;
+                             base.isGenerating = undefined;
+                             base.isPlaceholder = undefined;
+                             return base;
+                         }
+                         return e;
+                     }));
+                 } catch (loadErr) {
+                     commitAction(prev => prev.map(e => {
+                         if (e.id === elementId) {
+                             return { ...e, genStatus: 'failed', genError: 'Failed to load generated image' } as ImageElement;
+                         }
+                         return e;
+                     }));
+                 }
+            } else {
+                commitAction(prev => prev.map(e => {
+                    if (e.id === elementId) {
+                        const base = { ...e } as ImageElement;
+                        if (result.status === 'failed') {
+                            base.genStatus = 'failed';
+                            base.genError = result.error || result.textResponse || 'Unknown error';
+                        } else {
+                            base.genStatus = result.status as 'timeout' | 'pending';
+                            if (result.error) base.genError = result.error;
+                        }
+                        return base;
+                    }
+                    return e;
+                }));
+            }
+
+        } catch (err) {
+             const msg = err instanceof Error ? err.message : String(err);
+             commitAction(prev => prev.map(e => {
+                if (e.id === elementId) {
+                    return { ...e, genStatus: 'failed', genError: msg } as ImageElement;
+                }
+                return e;
+            }));
+        }
+    };
+
     const isElementVisible = useCallback((element: Element, allElements: Element[]): boolean => {
         if (element.isVisible === false) return false;
         if (element.parentId) {
@@ -388,9 +461,9 @@ const App: React.FC = () => {
         }
         const scaleX = viewportWidth / contentWidth;
         const scaleY = viewportHeight / contentHeight;
-        const paddingFactor = 0.9;
+        const paddingFactor = 0.95;
         const rawZoom = Math.min(scaleX, scaleY) * paddingFactor;
-        const clampedZoom = Math.max(0.1, Math.min(rawZoom, 10));
+        const clampedZoom = Math.min(rawZoom, 40);
         const contentCenterX = minX + contentWidth / 2;
         const contentCenterY = minY + contentHeight / 2;
         const panX = viewportWidth / 2 - clampedZoom * contentCenterX;
@@ -497,6 +570,7 @@ const App: React.FC = () => {
                     cursor={cursor}
                     handleStopEditing={handleStopEditing}
                     canvasBackgroundColor={canvasBackgroundColor}
+                    onRetryGenerate={handleRetryGenerate}
                 />
                 
                 <ContextMenuOverlay

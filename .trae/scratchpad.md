@@ -1,283 +1,197 @@
 # BananaPod 项目状态记录
 
-
-## 当前阶段：iframe URL Key 注入与设置锁定（规划者）
-
-### 背景和动机
-
-- 现状：项目目前通过设置面板手动输入代理A/代理B的 Key，并持久化到 `localStorage`（例如 `WHATAI_API_KEY`、`GRSAI_API_KEY`）。
-- 新需求：当项目被 iframe 嵌套且 URL 满足 `协议://主机名[:端口]/?key1=xxxx&key2=xxxx` 同时存在时：
-  - 设置界面不可直接输入 Key
-  - Key 需从 URL 中读取：`key1` 对应代理A，`key2` 对应代理B
-- 保持兼容：当项目直接用浏览器打开时，依旧允许在设置面板手动输入 Key。
-
-### 关键挑战和分析
-
-- iframe 环境判断：
-  - 需要兼容同源与跨域 iframe；跨域情况下 `window.top` 访问可能抛异常。
-  - 预期策略：`try { window.self !== window.top } catch { true }` 视为 iframe 内。
-- URL 格式与 query 解析：
-  - 需要严格限定“根路径 + query”场景，避免任意带参链接误触发锁定（建议 `location.pathname === '/'`）。
-  - 需要同时存在 `key1` 与 `key2` 才启用锁定，缺一不可。
-- `key2` 的非标准格式兼容：
-  - 示例中 `key2=sk-xxx&1767...` 的尾部片段包含 `&`，若使用 `URLSearchParams` 会被拆成新的参数而丢失。
-  - 预期解析方式：使用字符串切片提取 `key1`/`key2`，其中 `key2` 取 `key2=` 后直到 query 结束（允许包含后续的 `&...` 无名片段）。
-- 现有请求侧依赖 `localStorage`：
-  - 现有服务调用在浏览器侧读取 `localStorage` 来设置请求头；若只更新内存态不落盘，需改动请求层读取来源，改动范围更大。
-  - 最小改动方案：URL 注入时同步写入 `localStorage` 以保持与现有服务逻辑一致。
-
-### 本阶段高层任务拆分
-
-1. 设计并实现 URL 注入触发条件
-   - 判定是否 iframe 内。
-   - 判定 URL 是否为根路径并同时含 `key1`、`key2`。
-   - 成功标准：仅在同时满足“iframe + 根路径 + key1&key2”时触发注入与锁定。
-
-2. 实现健壮的 URL key 解析（兼容 `key2` 含 `&` 的尾段）
-   - `key1`：提取 `key1=` 后到 `&key2=` 前（或到下一个 `&` 前）。
-   - `key2`：提取 `key2=` 后到 query 结束，允许包含 `&1767...` 等尾段。
-   - 成功标准：在示例 URL 中解析得到：
-     - 代理A key = `key1` 值
-     - 代理B key = `key2` 值（包含 `&1767...` 尾段）
-
-3. 在凭证 hook 中接入注入与锁定状态
-   - 在 `useCredentials` 初始化/挂载阶段检测触发条件。
-   - 触发时将解析出的 key 写入：
-     - 内存 state（用于 UI 展示）
-     - `localStorage`（用于请求层读取）
-   - 对外暴露 `isKeyInputLocked`（或 `keySource: 'url' | 'manual'`）供 UI 使用。
-   - 成功标准：在 iframe + URL keys 场景下刷新页面仍能从 URL 注入并生效。
-
-4. 在设置面板锁定输入与保存入口
-   - `CanvasSettings` 输入框在锁定时 `disabled/readOnly`，并阻止 `onChange` 写入。
-   - 保存按钮在锁定时禁用或隐藏，避免误导。
-   - 可选：在输入框附近提示“已从 URL 注入，iframe 模式不可手动修改”。
-   - 成功标准：锁定时无法手动修改；非锁定时行为与现状一致。
-
-5. 验证与回归
-   - 手动验证：
-     - iframe + URL 同时带 `key1`/`key2`：输入不可编辑，代理A/代理B分别使用对应 key。
-     - 非 iframe 直接打开：可手动输入/保存，刷新后从 `localStorage` 读取。
-     - 缺少 `key1` 或 `key2`：不锁定输入。
-   - 命令验证：
-     - `npm run lint`
-     - `npx tsc --noEmit`
-
-### 项目状态看板（iframe URL Key 注入与设置锁定）
-
-#### 已完成
-
-- [x] 规划者：明确触发条件（iframe + 根路径 + 同时存在 key1/key2）。
-- [x] 规划者：明确解析策略（字符串切片，`key2` 取到 query 末尾）。
-- [x] 规划者：明确改动点（`useCredentials` 注入、`CanvasSettings` 锁定、`App.tsx` 透传）。
-
-#### 进行中
-
-- [x] 执行者：在 `useCredentials` 中实现 URL 注入并暴露锁定状态。
-- [x] 执行者：在 `CanvasSettings` 中锁定输入与保存入口，并接线到 `App.tsx`。
-- [x] 执行者：完成手动验证并运行 `npm run lint`、`npx tsc --noEmit`。
-
-#### 待办
-
-- [ ] 评估是否需要“URL 注入不落盘”模式（避免写入 `localStorage` 的安全顾虑）。
-
-### 执行者反馈或请求帮助（本阶段约定）
-
-- 执行者在落地每个任务后补充：
-  - 涉及文件与改动摘要（建议至少包含：`src/hooks/useCredentials.ts`、`src/features/settings/CanvasSettings.tsx`、`src/App.tsx`）。
-  - 关键调试信息（建议包含：是否判定为 iframe、是否命中注入、解析到的 key 长度/是否为空；避免输出完整 key）。
-  - 已运行的命令与结果（`npm run lint`、`npx tsc --noEmit`）。
-
-- 执行者（本轮实现）：
-  - `src/hooks/useCredentials.ts`：
-    - 新增 iframe + URL 根路径 + 同时存在 `key1`/`key2` 的检测。
-    - 通过字符串切片解析 query，其中 `key2` 支持携带 `&1767...` 这类无名尾段。
-    - 若命中注入：初始化时直接使用 URL key，并在 effect 中同步写入 `localStorage`，同时暴露 `isKeyInputLocked`。
-    - 调试输出：`[Credentials] url injected keys enabled`（仅输出 key 长度与命中状态，不输出完整 key）。
-  - `src/features/settings/CanvasSettings.tsx`：
-    - 新增 `isKeyInputLocked` 入参；锁定时 key 输入框 `readOnly` 且 `onChange` 直接返回。
-  - `src/App.tsx`：
-    - 透传 `isKeyInputLocked` 给 `CanvasSettings`。
-    - 当检测到存在 `key2`（代理B key）时，初始化默认选择 `apiProvider = 'Grsai'`，从而让 PromptBar 默认展示代理B模型列表。
-  - 已运行命令：
-    - `npm run lint` ✅
-    - `npx tsc --noEmit` ✅
-
-### 当前状态/进度跟踪（iframe URL Key 注入与设置锁定）
-
-- 规划者：
-  - 已完成方案设计与风险点分析（iframe 判定、`key2` 非标准 query 兼容、与 `localStorage` 依赖的取舍）。
-  - 下一步交由执行者按看板“进行中”实现并验证。
-- 执行者（本轮实现）：
-  - 已完成 URL 注入、锁定状态透传与设置面板输入锁定。
-  - 命令验证已通过；建议由用户在实际 iframe 场景中做一次端到端验证（确认代理A/代理B分别使用 `key1`/`key2`）。
-
-## 当前阶段：运行时错误修复（执行者）
+## 当前阶段：代理B（Grsai）生图超时占位符保留与任务ID重试（UI 优化阶段）
 
 ### 背景和动机
 
-- 线上运行出现两类报错：
-  - SVG 渲染属性出现 `Infinity/-Infinity`（例如 `<rect x="-Infinity">`、`<g transform="translate(-Infinity, Infinity)">`、`<foreignObject x="-Infinity">`）。
-  - `[LastSession] indexedDB save failed ... One of the specified object stores was not found.`，导致会话保存回退到 localStorage。
-
-### 项目状态看板（运行时错误修复）
-
-#### 已完成
-
-- [x] 修复 LastSession IndexedDB object store 缺失导致的保存失败
-- [x] 修复 SelectionOverlay/Canvas 渲染时 Infinity/-Infinity 导致的 SVG 属性错误
-- [x] 更新 dist，并在本地 preview 验证 build/lint/tsc 通过
-
-### 执行者反馈或请求帮助（运行时错误修复）
-
-- IndexedDB：
-  - 发现根因是同一个 DB（`BananaPodDB`）在不同模块以不同版本/不同 store 初始化，可能导致“images 存在但 lastSession 不存在”（或反之）。
-  - 处理方式：统一将 DB version 升级到 4，并在两个 openDB 的 `onupgradeneeded` 中确保同时创建 `images` 与 `lastSession`（且清理旧 `history` store）。
-  - 关键调试信息：原错误栈包含 `transaction('lastSession')` 报 “object stores not found”，修复后应不再触发该异常（首次打开会触发升级）。
-
-- SVG Infinity：
-  - 处理方式：对 `zoom/panOffset` 做有限值兜底（zoom<=0 或非 finite 退回 1，pan 非 finite 退回 0），并在 `SelectionOverlay` 内对 selection bounds / selectionBox 做 finite 校验，非 finite 直接不渲染相关 overlay（避免把 Infinity 写进 SVG 属性）。
-
-- 已运行命令：
-  - `npm run lint` ✅
-  - `npx tsc --noEmit` ✅
-  - `npm run build` ✅（已更新 dist）
-
-## 当前阶段：图层合并修复与模块化（规划者）
-
-### 背景和动机
-
-- 现状：图层合并功能出现两个用户可见问题：
-  - 形状/路径合并后描边变细，视觉与合并前不一致。
-  - 图片合并后不显示（合并结果为空白或被裁切）。
-- 目标：修复上述问题，并将“图层合并”独立为功能模块，降低后续迭代（画布渲染、选择逻辑、导出、撤销历史等）对合并功能的回归影响。
+- 现状：代理B（Grsai）在网络抖动、服务端排队、Professional 模型耗时偏长等场景下，会出现“出图过慢 → 前端轮询超时/失败”。当前实现会在失败时移除占位符，用户丢失上下文，也无法基于服务端任务继续取回结果。
+- 用户目标（体验）：第一次失败也不要“白等”，占位符应保留并清晰告知“任务ID/当前状态/下一步动作”，用户可在同一个占位符上反复“重新获取”直到成功或明确失败，同时仍然能手动删除该占位符。
+- 新需求（必须满足）：
+  - 仅当使用代理B相关模型（即 Grsai 提供方模型）时：
+    - 生成图片时记录任务ID（taskId），并显示在占位符内。
+    - 失败后占位符内提供“重新获取”按钮：点击按钮根据 taskId 再次查询生成图片信息。
+  - 代理A（WHATAI）仅保留以下能力：
+    - 首次生成失败时，占位符不消失，且占位符内显示失败原因。
+    - 不显示 taskId，不提供“重新获取”按钮。
+  - 通用结果处理：
+    - 若确认生成成功：展示生成图片（替换占位符内容）。
+    - 若确认生成失败：展示失败原因，占位符不消失，但可手动删除。
 - 约束：
-  - 不改变用户交互入口（图层面板按钮、右键菜单等）的行为语义，仅修复结果与稳定性。
+  - 所有新增元素的视觉风格与现有 PodUI 一致（背景/圆角/阴影/字体/按钮态）。
   - 不引入新第三方依赖。
-  - 模块拆分尽量小且清晰，单文件尽量控制在 250 行以内。
+  - 不输出敏感信息（API key、完整 prompt、完整图片 Base64）；但需要有足够调试信息（taskId、状态、耗时、尝试次数）。
+- **用户反馈修正（UI）**：
+  - 生成失败的信息和重试按钮在缩小时变得太小不可读。
+  - 需改为与 `Generating` 状态一致的固定屏幕尺寸（不受 Zoom 影响）并居中显示。
 
 ### 关键挑战和分析
 
-- 渲染语义差异（描边粗细）：
-  - 画布渲染中，对 `path/shape/line` 等矢量元素使用 `strokeWidth / zoom`（保持屏幕像素粗细恒定）。
-  - 合并（栅格化）当前按元素原始 `strokeWidth` 生成 SVG 再绘制到 canvas，未考虑 zoom，导致在 `zoom != 1` 时合并结果与当前视图语义不一致，从而“描边变细/变粗”。
-- 图片裁切/圆角裁切坐标系问题（图片不可见）：
-  - 合并时对图片使用 `<clipPath>` 以实现圆角裁切。
-  - 当前 clip 的 rect 坐标未与合并时的 `offsetX/offsetY` 保持一致，可能导致 clip 把图片完全裁掉，表现为“图片合并后不显示”。
-- SVG → Image → Canvas 的资源加载与安全限制：
-  - 合并走 `data:image/svg+xml;base64,...`，SVG 内 `<image href="...">` 可能是外部 URL、Blob URL、data URL。
-  - 外部 URL 可能触发跨域/taint 或加载失败，需要可观测的调试信息与失败兜底策略。
-- 合并边界稳定性：
-  - 合并目标集合涉及：selected/visible 模式、group 展开、isVisible 递归、过滤不支持类型（video）、历史 commit。
-  - 需要把“目标集合决策”与“栅格化实现”解耦，形成可复用且可单测的纯函数边界，避免 UI 层改动影响核心逻辑。
+- 任务ID可得性与传播链路：
+  - `grsaiService` 当前在 `pollDrawResult` 超时后抛异常，上层得到的是 “图像生成失败: 获取结果超时” 的文本，拿不到 taskId，导致无法“重新获取”。
+  - 需要把“已获得 taskId，但结果未就绪（pending/timeout）”作为一种可返回的状态，携带 taskId 交给前端写入占位符。
+- 占位符状态机（避免 UI/逻辑混乱）：
+  - 需要明确占位符的状态集合与迁移：`creating -> generating -> timeout|failed|succeeded`，以及 `retrying -> generating` 的循环。
+  - “仍在生成中（pending）”是有效状态：按钮点击后不应把它当成失败，只提示“仍在生成中”并保留占位符。
+- 画布内可点击按钮的交互处理：
+  - 占位符渲染在 SVG 内，按钮最好使用 `foreignObject`（嵌入 HTML）以复用现有 button 样式。
+  - 需要 `stopPropagation`/`preventDefault`，避免触发画布拖拽、框选、缩放等手势。
+- 刷新后的可恢复性（是否必须）：
+  - 当前 `boardsStorage` 会瘦身图片元素字段，丢弃 `isGenerating/isPlaceholder/previewHref` 这类运行态字段。
+  - 本需求中 taskId/失败原因属于“用户需要看到并可操作”的信息，建议作为可持久化字段写进 `ImageElement` 并被存储层保留。
+- 调试与可观测性：
+  - 需要在关键节点打印轻量日志，帮助定位“超时、失败原因、pending 未完成、重试次数”等问题。
+  - 需要避免泄露敏感数据：日志只包含 taskId（可截断）、模型名、尝试次数、耗时。
 
 ### 目标定义（可验收）
 
-- 功能正确性：
-  - 仅图片合并：合并结果图片可见；圆角裁切与透明度正确。
-  - 仅形状/路径合并：合并结果描边粗细在同一倍率视图下与合并前一致（重点覆盖 zoom=0.5/1/2）。
-  - 混合合并：布局（x/y/宽高）、不透明度（0–100 转 0–1）、圆角裁切一致；合并后生成单个 ImageElement 并替换原元素集合。
-- 稳定性：
-  - 合并失败时提供清晰错误提示，并输出必要调试信息（不输出完整 key/敏感内容，不输出完整图片数据）。
-  - 不因单个元素异常导致整体崩溃；可按策略跳过或失败回退。
-- 模块化：
-  - 业务层只通过 `src/features/layerMerge/` 暴露的 API 调用合并。
-  - React hook（如 `useLayerMerge`）仅负责依赖注入与 UI/错误处理，不直接拼 SVG/画 canvas。
+- 生成中（两类提供方通用）：
+  - 创建占位符后，进入 generating 状态，占位符内显示 “Generating...”。
+  - 若为代理B（Grsai）：同时显示 `ID: <taskId>`（taskId 未获取到前可显示 `ID: -` 或隐藏该行）。
+- 首次失败（两类提供方通用，尤其是超时）：
+  - 占位符不被删除。
+  - 占位符内显示错误提示（超时/失败原因）。
+  - 若为代理B（Grsai）：占位符内同时显示 `ID: <taskId>`（若已获取）与“重新获取”按钮。
+  - 若为代理A（WHATAI）：不显示 taskId，不出现“重新获取”按钮。
+- 点击“重新获取”（仅代理B/Grsai 生效）：
+  - 若任务已成功：占位符替换为真实图片；清除占位符标记与错误信息。
+  - 若任务仍在生成：提示“仍在生成中，请稍后重试”，占位符继续保留（ID 不变）。
+  - 若任务已失败：显示明确失败原因，占位符继续保留（ID 不变）。
+  - 多次点击不会创建新元素，仅更新同一个占位符元素。
+- 删除：
+  - 用户通过现有删除逻辑可删除该占位符（无论生成中/失败/超时）。
+- 风格一致：
+  - 占位符内的提示条、文本、按钮使用现有 PodUI 的颜色/圆角/边框/阴影语义（沿用 `podui.css` 的 CSS 变量与已有按钮 class）。
+  - **Failure Overlay**: 改为固定尺寸的居中卡片（180x140px），不受画布缩放影响（`scale(1/z)`），确保任何缩放比例下都清晰可读且可点击。
 
-### 模块边界与 API 草案
+### 状态机与数据字段（规划约定）
 
-- 新模块目录：`src/features/layerMerge/`
-- 建议导出：
-  - `computeMergeTargets(...)`：纯函数，只负责计算要合并的 id 集合与元素列表。
-  - `rasterizeElementsToPng(...)`：将元素列表在指定语义（含 zoom）下栅格化，返回 `{ href, mimeType, width, height, x, y }`。
-  - `mergeLayersToImageElement(...)`：编排函数：targets → rasterize → 生成 `ImageElement`（含默认圆角）→ 返回给上层 commit。
-- 上层入口保持：
-  - `useLayerMerge` 继续作为 UI 层使用的 hook，但内部改为调用 `mergeLayersToImageElement`。
+- `ImageElement` 新增可选字段（需可持久化）：
+  - `genProvider?: 'Grsai' | 'WHATAI'`
+  - `genTaskId?: string`
+  - `genStatus?: 'creating' | 'generating' | 'retrying' | 'pending' | 'timeout' | 'failed'`
+  - `genError?: string`
+- UI 展示规则（Canvas 占位符内）：
+  - `isPlaceholder === true`：表示这是“生成占位符”（与普通 placeholder 图片区分）。
+  - `isGenerating === true`：显示 spinner/Generating 样式。
+  - `genTaskId`：仅在 `genProvider === 'Grsai'` 时展示为 `ID: ${taskId.slice(0, 8)}...`（避免过长）。
+  - `genStatus in ['timeout','failed']`：显示 `genError`（截断）。
+  - “重新获取”按钮：仅当 `genProvider === 'Grsai'` 且存在 `genTaskId` 时展示。
+  - `genStatus in ['pending','generating','retrying']`：不显示失败文案；可在 `pending` 时显示“仍在生成中”提示（不作为 error toast）。
 
-### 高层任务拆分（按风险从低到高、可逐步回归）
+### 高层任务拆分（规划者 → 执行者实施顺序）
 
-1. 固化“合并目标集合”语义（纯函数抽离）
-   - 工作内容：
-     - 从现有 `useLayerMerge` 抽取纯逻辑：根据 mode(selected/visible)、selectedIds、group 展开、可见性规则，输出稳定的 `idsToMerge`。
-     - 明确过滤规则：不合并 `group` 容器本身；跳过 `video`（与现状一致）。
+1. 扩展 `ImageElement` 以承载任务信息并接入存储层
+   - 修改 `src/types/index.ts`：为 `ImageElement` 增加 `genProvider/genTaskId/genStatus/genError`。
+   - 修改 `src/services/boardsStorage.ts`：在 `slimElement`/inflate 相关逻辑中保留上述字段（否则刷新后信息丢失）。
    - 成功标准：
-     - 对同一份 elements，输入相同参数，输出集合稳定且可复用（图层面板入口与右键菜单入口保持一致）。
-     - 纯函数不依赖 React，不读写外部状态，便于后续单测。
+     - 刷新页面后，占位符仍能看到失败原因；若为 Grsai 占位符且已有 taskId，则仍能看到 `ID`。
 
-2. 建立独立模块目录与对外 API（解耦 UI 与栅格化）
-   - 工作内容：
-     - 新建 `src/features/layerMerge/`，把“目标集合计算”和“栅格化实现”迁入模块内。
-     - `useLayerMerge` 降级为 thin adapter：收集依赖、调用模块、commitAction、捕获并提示错误。
-   - 成功标准：
-     - 业务层不再直接调用 `flattenElementsToImage`；合并入口集中在新模块。
-     - 模块内部函数输入/输出清晰，可在不启动 React 的前提下进行逻辑验证。
+2. 改造 `grsaiService`：超时/未完成时也返回 taskId，并提供单次查询接口
+  - 目标：让前端在“已获得 taskId 但轮询窗口没等到图”时，仍能拿到 `taskId` 进行重试。
+  - 调整策略（建议）：
+    - 将 `pollDrawResult` 从“超时抛错”改为“返回 `{ status: 'timeout'|'pending'|'failed'|'succeeded', taskId, ... }`”。
+    - 新增 `getDrawResultOnce(taskId)`：调用 `/v1/draw/result` 一次，解析结果并返回三态（succeeded/failed/pending），供“重新获取”按钮使用。
+  - 成功标准：
+    - 生成接口返回 id 后，即使超时也能让前端拿到该 id。
+    - “单次查询”能区分：有结果 / failed / pending。
 
-3. 修复“图片合并后不显示”（clipPath 坐标系一致性）
-   - 工作内容：
-     - 修正合并 SVG 的 `<clipPath>` rect 坐标：应与 `<image x/y>` 的 offset 后坐标保持一致。
-     - 针对图片元素的圆角：统一使用计算后的 r，并保证 `clip-path="url(#id)"` 引用在同一个 SVG 内有效。
-     - 增加最小调试信息：是否包含 image、clipDefs 数量、合并宽高、svg 字符串长度。
-   - 成功标准：
-     - 仅图片元素合并：合并结果必然可见（非空白），且圆角裁切位置正确。
-     - 不引入新的控制台错误（除非明确记录为可忽略的外部资源跨域错误，并转为可理解的 UI 提示）。
+3. 调整生成管线 `useGenerationPipeline`：失败不删占位符，写入任务ID与状态
+  - 在两类 provider 的图片生成分支中，统一保证“失败不删除占位符 + 占位符内可见失败原因”。差异点如下：
+    - 代理B（Grsai）：
+      - 占位符创建后：写入 `genProvider='Grsai'`、`genStatus='generating'`。
+      - 从服务层拿到 `taskId` 后立刻写入 `genTaskId`，使 UI 立刻可见。
+      - timeout/failed/pending：保留占位符；`isGenerating=false`；写入 `genStatus` 与 `genError`（pending 可不写 genError）。
+    - 代理A（WHATAI）：
+      - 占位符创建后：写入 `genProvider='WHATAI'`、`genStatus='generating'`。
+      - 失败时：保留占位符；`isGenerating=false`；写入 `genStatus='failed'|'timeout'` 与 `genError`；不写 `genTaskId`。
+    - 通用成功路径：
+      - 成功：替换 `href/mimeType/width/height`，并清理 `isGenerating/isPlaceholder/gen*` 字段。
+  - 成功标准：
+    - 首次失败后占位符仍在画布上：Grsai 显示 taskId 与重试入口；WHATAI 仅显示失败原因。
 
-4. 修复“描边变细”（对齐画布语义，引入 zoom）
-   - 工作内容：
-     - 合并栅格化生成 SVG 时，对 `path/shape/line/arrow` 等使用 `effectiveStrokeWidth = strokeWidth / zoom`（与画布渲染对齐）。
-     - 明确 zoom 的来源：由调用层传入当前 zoom；若未来支持“以 1x 输出”可再扩展选项。
-   - 成功标准：
-     - zoom=0.5/1/2 下，合并前后描边粗细在同倍率视图下保持一致。
-     - 不破坏现有 `strokeOpacity`、dash 样式等属性（保持兼容）。
+4. 调整 `Canvas`：占位符内显示 ID、失败原因与“重新获取”按钮（PodUI 风格）
+  - 在图片占位符渲染分支中新增 UI：
+    - generating：在现有提示条里增加 `ID: ...` 行或同一行右侧（仅 Grsai）。
+    - failed/timeout：提示条替换为错误态（沿用当前深色底+轻边框+文字）；仅 Grsai 显示“重新获取”按钮，WHATAI 不显示按钮。
+  - 交互要求：
+    - 按钮点击 `stopPropagation`，不触发选择框/拖拽。
+    - 视觉要求：使用现有 PodUI button class（例如 `pod-btn-*` 或 `PodButton`）与 CSS 变量，圆角与阴影与现有控件一致。
+  - 成功标准：
+    - UI 风格一致；按钮可点；不会导致画布误操作。
 
-5. 观测、回归与守护（降低未来改动风险）
-   - 手动回归用例：
-     - zoom=0.5：选择 shape+path 合并，观察描边一致。
-     - zoom=2：同上。
-     - 图片：无圆角/有圆角（borderRadius），合并后可见且裁切正确。
-     - 混合：图片+形状+文本合并，位置、透明度（0–100）正确。
-     - group：选择包含 group 的合并，确认展开规则正确，合并后 group 及其子元素被替换为单图层。
+5. 新增“重新获取”回调与透传：完成基于 taskId 的闭环更新
+  - 新增 `handleRetryGrsaiTask(placeholderId)`（仅 Grsai 占位符可触发）：定位元素 → 读 `genTaskId` → 调用 `getDrawResultOnce` → 更新元素。
+  - 状态更新：
+    - 点击后将元素标记为 `genStatus='retrying'`、`isGenerating=true`（显示 loading）。
+    - 返回 succeeded：加载图片并替换占位符。
+    - 返回 failed：写入 `genStatus='failed'` 与 `genError`，保留占位符。
+    - 返回 pending：写入 `genStatus='pending'`，保留占位符，并在提示条显示“仍在生成中”。
+  - 成功标准：
+    - 多次点击不创建新元素；同一个占位符逐步从 pending → succeeded 或 pending → failed。
+
+6. 回归验证与调试信息（必须可复现与可定位）
+  - 手动用例：
+    - 代理B（Grsai）：
+      - 触发超时：占位符保留 + 显示 taskId + 可重试。
+      - 任务最终成功：重试后能拿到图并替换。
+      - 任务明确失败：显示 failure_reason 并保留占位符。
+    - 代理A（WHATAI）：
+      - 触发失败：占位符保留 + 显示失败原因；不显示 taskId；不出现“重新获取”按钮。
+      - 正常成功：行为与现状一致。
+  - 日志要求（示例，执行者实现时遵循）：
+    - `[GrsaiTask] created { placeholderId, taskId, model }`
+    - `[GrsaiTask] poll timeout { taskId, tries, elapsedMs }`
+    - `[GrsaiTask] retry { taskId } -> { status }`
    - 命令验证：
      - `npm run lint`
      - `npx tsc --noEmit`
-   - 成功标准：
-     - lint/tsc 通过；关键用例无回归；合并失败时的错误提示与调试信息完整且不泄露敏感数据。
 
-### 项目状态看板（图层合并修复与模块化）
+### 项目状态看板（代理B 生图超时占位符保留与任务ID重试）
 
 #### 已完成
 
-- [x] 规划者：确认合并语义与验收标准（zoom、可见性、group 展开）。
-- [x] 规划者：确认模块 API 与目录结构（`src/features/layerMerge/`）。
-- [x] 执行者：抽离纯函数 `computeMergeTargets`，并将入口接回现有 UI。
-- [x] 执行者：建立独立模块 `src/features/layerMerge/`，解耦 UI 与栅格化。
-- [x] 执行者：修复 clipPath 偏移导致的图片不可见问题。
-- [x] 执行者：引入 zoom 参与 strokeWidth 计算，修复描边变细。
-- [x] 执行者：清理旧代码（移除 `flattenElementsToImage`），运行 `lint/tsc`。
+- [x] 规划者：明确目标、状态机与 UI 交互语义（占位符保留、taskId 展示、重新获取闭环）
+- [x] 规划者：明确风险点（taskId 透出、SVG 内按钮交互、存储层字段保留、调试与安全）
+- [x] 执行者：扩展 `ImageElement` 生成任务字段并接入存储层持久化
+- [x] 执行者：改造 `grsaiService` 返回结构（超时/未完成也带 taskId）并新增单次查询接口
+- [x] 执行者：调整 `useGenerationPipeline`（Grsai 失败不删占位符，写入任务状态/原因）
+- [x] 执行者：调整 `Canvas`（占位符内显示 ID、失败原因与“重新获取”按钮，风格一致）
+- [x] 执行者：增加重试回调并透传到画布，完成“重新获取”闭环
+- [x] 执行者：完成手动回归与 `lint/tsc` 验证，并整理调试信息
+- [x] 规划者：验收并结束本阶段任务
+- [x] 执行者：(UI Hotfix) 修复 Failed Overlay 在缩小画布时过小的问题，改为固定尺寸卡片。
+- [x] 执行者：(UI Enhancement) 调整 Failure Overlay 背景为紫色磨砂玻璃效果，与 UI 风格一致。
 
-### 执行者反馈或请求帮助（图层合并修复与模块化）
+#### 进行中
 
-- 执行者（本轮实现）：
-  - **模块化重构**：
-    - 新建 `src/features/layerMerge/` 目录。
-    - `computeMergeTargets.ts`：纯函数，负责计算合并目标。
-    - `rasterizeToPng.ts`：核心栅格化逻辑，包含修复代码。
-    - `index.ts`：统一入口 `mergeLayersToImageElement`。
-  - **Bug 修复**：
-    - **描边变细**：在 `rasterizeToPng.ts` 中引入 `zoom` 参数，对 `path/shape/arrow/line` 使用 `strokeWidth / zoom` 计算 SVG 属性，确保栅格化结果与画布视觉一致。
-    - **图片不可见**：修正 `<clipPath><rect>` 的 `x/y` 坐标，加上 `offsetX/offsetY`，解决了裁切错位导致图片消失的问题。
-  - **代码清理**：
-    - 移除了 `src/utils/canvas.ts` 中不再使用的 `flattenElementsToImage`。
-    - 更新 `useLayerMerge.ts` 和 `App.tsx` 以适配新 API（传入 `zoom`）。
+- [ ] (空)
+
+#### 待办
+
+- [ ] (空)
+
+### 执行者反馈或请求帮助（本阶段约定）
+
+- 改动摘要与调试信息：
+  - **核心改动**：
+    - `ImageElement` 增加 `genProvider/genTaskId/genStatus/genError` (types/index.ts) 并持久化 (boardsStorage.ts)。
+    - `grsaiService` 新增 `getDrawResultOnce` 并更新 `pollDrawResult` 返回结构。
+    - `useGenerationPipeline` 失败时不再删除占位符，而是写入错误状态与 TaskID (Grsai)。
+    - `Canvas` 新增 Failure Overlay，仅 Grsai 显示 TaskID 与 Retry 按钮。
+    - `App.tsx` 实现 `handleRetryGenerate`，处理重试逻辑（Pending/Failed/Succeeded 状态流转）。
+    - **(New)** `Canvas.tsx` Failure Overlay UI 调整：改为 `scale(1/z)` 的固定尺寸卡片 (180x140)，避免缩小不可读；背景改为紫色磨砂玻璃效果。
   - **验证结果**：
-    - `npm run lint` ✅
-    - `npx tsc --noEmit` ✅
+    - `npm run lint`: Passed.
+    - `npx tsc --noEmit`: Passed.
+  - **调试参考**：
+    - 首次生成失败（超时）：ImageElement 会有 `genStatus='timeout'`, `genTaskId='...'`. UI 显示“生成超时”与重试按钮。
+    - 重试 Pending：点击按钮 -> `genStatus='pending'` -> UI 显示“仍在生成中”。
+    - 重试成功：`getDrawResultOnce` 返回 succeeded -> 图片加载 -> 占位符被真实图片替换，gen* 字段清除。
 
-### 当前状态/进度跟踪（图层合并修复与模块化）
+### 当前状态/进度跟踪（代理B 生图超时占位符保留与任务ID重试）
 
 - 规划者：
-  - 计划已全部执行完毕。
+  - 已完成：验收完毕，确认所有功能点符合需求。
+  - 状态：本阶段任务关闭。
 - 执行者：
-  - 已完成模块化拆分与两个核心 Bug 的修复。
-  - 代码已清理，静态检查通过。
-  - 请用户进行最终的手动验证（尝试合并形状、图片，检查描边粗细和图片显示）。
- 
+  - 已完成：代码已合入并验证通过。
