@@ -142,3 +142,142 @@
   - `npm run lint` ✅
   - `npx tsc --noEmit` ✅
   - `npm run build` ✅（已更新 dist）
+
+## 当前阶段：图层合并修复与模块化（规划者）
+
+### 背景和动机
+
+- 现状：图层合并功能出现两个用户可见问题：
+  - 形状/路径合并后描边变细，视觉与合并前不一致。
+  - 图片合并后不显示（合并结果为空白或被裁切）。
+- 目标：修复上述问题，并将“图层合并”独立为功能模块，降低后续迭代（画布渲染、选择逻辑、导出、撤销历史等）对合并功能的回归影响。
+- 约束：
+  - 不改变用户交互入口（图层面板按钮、右键菜单等）的行为语义，仅修复结果与稳定性。
+  - 不引入新第三方依赖。
+  - 模块拆分尽量小且清晰，单文件尽量控制在 250 行以内。
+
+### 关键挑战和分析
+
+- 渲染语义差异（描边粗细）：
+  - 画布渲染中，对 `path/shape/line` 等矢量元素使用 `strokeWidth / zoom`（保持屏幕像素粗细恒定）。
+  - 合并（栅格化）当前按元素原始 `strokeWidth` 生成 SVG 再绘制到 canvas，未考虑 zoom，导致在 `zoom != 1` 时合并结果与当前视图语义不一致，从而“描边变细/变粗”。
+- 图片裁切/圆角裁切坐标系问题（图片不可见）：
+  - 合并时对图片使用 `<clipPath>` 以实现圆角裁切。
+  - 当前 clip 的 rect 坐标未与合并时的 `offsetX/offsetY` 保持一致，可能导致 clip 把图片完全裁掉，表现为“图片合并后不显示”。
+- SVG → Image → Canvas 的资源加载与安全限制：
+  - 合并走 `data:image/svg+xml;base64,...`，SVG 内 `<image href="...">` 可能是外部 URL、Blob URL、data URL。
+  - 外部 URL 可能触发跨域/taint 或加载失败，需要可观测的调试信息与失败兜底策略。
+- 合并边界稳定性：
+  - 合并目标集合涉及：selected/visible 模式、group 展开、isVisible 递归、过滤不支持类型（video）、历史 commit。
+  - 需要把“目标集合决策”与“栅格化实现”解耦，形成可复用且可单测的纯函数边界，避免 UI 层改动影响核心逻辑。
+
+### 目标定义（可验收）
+
+- 功能正确性：
+  - 仅图片合并：合并结果图片可见；圆角裁切与透明度正确。
+  - 仅形状/路径合并：合并结果描边粗细在同一倍率视图下与合并前一致（重点覆盖 zoom=0.5/1/2）。
+  - 混合合并：布局（x/y/宽高）、不透明度（0–100 转 0–1）、圆角裁切一致；合并后生成单个 ImageElement 并替换原元素集合。
+- 稳定性：
+  - 合并失败时提供清晰错误提示，并输出必要调试信息（不输出完整 key/敏感内容，不输出完整图片数据）。
+  - 不因单个元素异常导致整体崩溃；可按策略跳过或失败回退。
+- 模块化：
+  - 业务层只通过 `src/features/layerMerge/` 暴露的 API 调用合并。
+  - React hook（如 `useLayerMerge`）仅负责依赖注入与 UI/错误处理，不直接拼 SVG/画 canvas。
+
+### 模块边界与 API 草案
+
+- 新模块目录：`src/features/layerMerge/`
+- 建议导出：
+  - `computeMergeTargets(...)`：纯函数，只负责计算要合并的 id 集合与元素列表。
+  - `rasterizeElementsToPng(...)`：将元素列表在指定语义（含 zoom）下栅格化，返回 `{ href, mimeType, width, height, x, y }`。
+  - `mergeLayersToImageElement(...)`：编排函数：targets → rasterize → 生成 `ImageElement`（含默认圆角）→ 返回给上层 commit。
+- 上层入口保持：
+  - `useLayerMerge` 继续作为 UI 层使用的 hook，但内部改为调用 `mergeLayersToImageElement`。
+
+### 高层任务拆分（按风险从低到高、可逐步回归）
+
+1. 固化“合并目标集合”语义（纯函数抽离）
+   - 工作内容：
+     - 从现有 `useLayerMerge` 抽取纯逻辑：根据 mode(selected/visible)、selectedIds、group 展开、可见性规则，输出稳定的 `idsToMerge`。
+     - 明确过滤规则：不合并 `group` 容器本身；跳过 `video`（与现状一致）。
+   - 成功标准：
+     - 对同一份 elements，输入相同参数，输出集合稳定且可复用（图层面板入口与右键菜单入口保持一致）。
+     - 纯函数不依赖 React，不读写外部状态，便于后续单测。
+
+2. 建立独立模块目录与对外 API（解耦 UI 与栅格化）
+   - 工作内容：
+     - 新建 `src/features/layerMerge/`，把“目标集合计算”和“栅格化实现”迁入模块内。
+     - `useLayerMerge` 降级为 thin adapter：收集依赖、调用模块、commitAction、捕获并提示错误。
+   - 成功标准：
+     - 业务层不再直接调用 `flattenElementsToImage`；合并入口集中在新模块。
+     - 模块内部函数输入/输出清晰，可在不启动 React 的前提下进行逻辑验证。
+
+3. 修复“图片合并后不显示”（clipPath 坐标系一致性）
+   - 工作内容：
+     - 修正合并 SVG 的 `<clipPath>` rect 坐标：应与 `<image x/y>` 的 offset 后坐标保持一致。
+     - 针对图片元素的圆角：统一使用计算后的 r，并保证 `clip-path="url(#id)"` 引用在同一个 SVG 内有效。
+     - 增加最小调试信息：是否包含 image、clipDefs 数量、合并宽高、svg 字符串长度。
+   - 成功标准：
+     - 仅图片元素合并：合并结果必然可见（非空白），且圆角裁切位置正确。
+     - 不引入新的控制台错误（除非明确记录为可忽略的外部资源跨域错误，并转为可理解的 UI 提示）。
+
+4. 修复“描边变细”（对齐画布语义，引入 zoom）
+   - 工作内容：
+     - 合并栅格化生成 SVG 时，对 `path/shape/line/arrow` 等使用 `effectiveStrokeWidth = strokeWidth / zoom`（与画布渲染对齐）。
+     - 明确 zoom 的来源：由调用层传入当前 zoom；若未来支持“以 1x 输出”可再扩展选项。
+   - 成功标准：
+     - zoom=0.5/1/2 下，合并前后描边粗细在同倍率视图下保持一致。
+     - 不破坏现有 `strokeOpacity`、dash 样式等属性（保持兼容）。
+
+5. 观测、回归与守护（降低未来改动风险）
+   - 手动回归用例：
+     - zoom=0.5：选择 shape+path 合并，观察描边一致。
+     - zoom=2：同上。
+     - 图片：无圆角/有圆角（borderRadius），合并后可见且裁切正确。
+     - 混合：图片+形状+文本合并，位置、透明度（0–100）正确。
+     - group：选择包含 group 的合并，确认展开规则正确，合并后 group 及其子元素被替换为单图层。
+   - 命令验证：
+     - `npm run lint`
+     - `npx tsc --noEmit`
+   - 成功标准：
+     - lint/tsc 通过；关键用例无回归；合并失败时的错误提示与调试信息完整且不泄露敏感数据。
+
+### 项目状态看板（图层合并修复与模块化）
+
+#### 已完成
+
+- [x] 规划者：确认合并语义与验收标准（zoom、可见性、group 展开）。
+- [x] 规划者：确认模块 API 与目录结构（`src/features/layerMerge/`）。
+- [x] 执行者：抽离纯函数 `computeMergeTargets`，并将入口接回现有 UI。
+- [x] 执行者：建立独立模块 `src/features/layerMerge/`，解耦 UI 与栅格化。
+- [x] 执行者：修复 clipPath 偏移导致的图片不可见问题。
+- [x] 执行者：引入 zoom 参与 strokeWidth 计算，修复描边变细。
+- [x] 执行者：清理旧代码（移除 `flattenElementsToImage`），运行 `lint/tsc`。
+
+### 执行者反馈或请求帮助（图层合并修复与模块化）
+
+- 执行者（本轮实现）：
+  - **模块化重构**：
+    - 新建 `src/features/layerMerge/` 目录。
+    - `computeMergeTargets.ts`：纯函数，负责计算合并目标。
+    - `rasterizeToPng.ts`：核心栅格化逻辑，包含修复代码。
+    - `index.ts`：统一入口 `mergeLayersToImageElement`。
+  - **Bug 修复**：
+    - **描边变细**：在 `rasterizeToPng.ts` 中引入 `zoom` 参数，对 `path/shape/arrow/line` 使用 `strokeWidth / zoom` 计算 SVG 属性，确保栅格化结果与画布视觉一致。
+    - **图片不可见**：修正 `<clipPath><rect>` 的 `x/y` 坐标，加上 `offsetX/offsetY`，解决了裁切错位导致图片消失的问题。
+  - **代码清理**：
+    - 移除了 `src/utils/canvas.ts` 中不再使用的 `flattenElementsToImage`。
+    - 更新 `useLayerMerge.ts` 和 `App.tsx` 以适配新 API（传入 `zoom`）。
+  - **验证结果**：
+    - `npm run lint` ✅
+    - `npx tsc --noEmit` ✅
+
+### 当前状态/进度跟踪（图层合并修复与模块化）
+
+- 规划者：
+  - 计划已全部执行完毕。
+- 执行者：
+  - 已完成模块化拆分与两个核心 Bug 的修复。
+  - 代码已清理，静态检查通过。
+  - 请用户进行最终的手动验证（尝试合并形状、图片，检查描边粗细和图片显示）。
+ 

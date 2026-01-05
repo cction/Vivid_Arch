@@ -1,8 +1,7 @@
 import { useCallback } from 'react';
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
-import type { Element, ImageElement } from '@/types';
-import { flattenElementsToImage } from '@/utils/canvas';
-import { getUiRadiusLg } from '@/ui/standards';
+import type { Element } from '@/types';
+import { mergeLayersToImageElement } from '@/features/layerMerge';
 
 type Deps = {
   elementsRef: MutableRefObject<Element[]>;
@@ -11,50 +10,25 @@ type Deps = {
   commitAction: (updater: (prev: Element[]) => Element[]) => void;
   generateId: () => string;
   setError: Dispatch<SetStateAction<string | null>>;
+  zoom: number;
 };
 
-export function useLayerMerge({ elementsRef, selectedElementIds, getDescendants, commitAction, generateId, setError }: Deps) {
+export function useLayerMerge({ elementsRef, selectedElementIds, getDescendants, commitAction, generateId, setError, zoom }: Deps) {
   const handleMergeLayers = useCallback(async (mode: 'selected' | 'visible') => {
-    const all = elementsRef.current;
-    let idsToMerge = new Set<string>();
-    if (mode === 'selected' && selectedElementIds.length > 0) {
-      selectedElementIds.forEach(id => {
-        idsToMerge.add(id);
-        const el = all.find(e => e.id === id);
-        if (el && el.type === 'group') {
-          getDescendants(id, all).forEach(desc => idsToMerge.add(desc.id));
-        }
-      });
-    } else {
-      all.forEach(el => {
-        if (el.isVisible !== false) {
-          idsToMerge.add(el.id);
-          if (el.type === 'group') {
-            getDescendants(el.id, all).forEach(desc => idsToMerge.add(desc.id));
-          }
-        }
-      });
-    }
-
-    const elementsToFlatten = all.filter(el => idsToMerge.has(el.id) && el.type !== 'group');
-    if (elementsToFlatten.length === 0) return;
-
     try {
-      const flattened = await flattenElementsToImage(elementsToFlatten);
-      const newImage: ImageElement = {
-        id: generateId(),
-        type: 'image',
-        name: 'Merged Image',
-        x: flattened.x,
-        y: flattened.y,
-        width: flattened.width,
-        height: flattened.height,
-        href: flattened.href,
-        mimeType: flattened.mimeType,
-        borderRadius: getUiRadiusLg(),
-        isLocked: false,
-        isVisible: true,
-      };
+      const result = await mergeLayersToImageElement({
+        elements: elementsRef.current,
+        selectedElementIds,
+        mode,
+        getDescendants,
+        generateId,
+        zoom,
+      });
+
+      if (!result) return;
+
+      const { newImage, idsToMerge } = result;
+
       commitAction(prev => {
         const keep = prev.filter(el => !idsToMerge.has(el.id));
         return [...keep, newImage];
@@ -63,7 +37,7 @@ export function useLayerMerge({ elementsRef, selectedElementIds, getDescendants,
       console.error(e);
       setError('合并图层失败：' + (e as Error).message);
     }
-  }, [elementsRef, selectedElementIds, getDescendants, commitAction, generateId, setError]);
+  }, [elementsRef, selectedElementIds, getDescendants, commitAction, generateId, setError, zoom]);
 
   return { handleMergeLayers };
 }
