@@ -102,11 +102,19 @@ const App: React.FC = () => {
     const [showUIPreview, setShowUIPreview] = useState(false);
 
     const { language, setLanguage, t } = useI18n('ZH');
-    const { apiKey, setApiKey, grsaiApiKey, setGrsaiApiKey } = useCredentials();
+    const { apiKey, setApiKey, grsaiApiKey, setGrsaiApiKey, isKeyInputLocked } = useCredentials();
 
     const [apiProvider, setApiProvider] = useState<'WHATAI' | 'Grsai'>(() => {
+        if (grsaiApiKey) return 'Grsai'
         try { return (localStorage.getItem('API_PROVIDER') as 'WHATAI' | 'Grsai') || 'WHATAI' } catch { return 'WHATAI' }
     });
+    const didAutoSelectProviderRef = useRef(false);
+    useEffect(() => {
+        if (didAutoSelectProviderRef.current) return;
+        if (!grsaiApiKey) return;
+        didAutoSelectProviderRef.current = true;
+        setApiProvider('Grsai');
+    }, [grsaiApiKey]);
     useEffect(() => {
         try { localStorage.setItem('API_PROVIDER', apiProvider) } catch { void 0 }
     }, [apiProvider]);
@@ -143,7 +151,7 @@ const App: React.FC = () => {
     const [progressMessage, setProgressMessage] = useState<string>('');
     const [imageModel, setImageModel] = useState<string>(() => {
         try {
-            const provider = (localStorage.getItem('API_PROVIDER') as 'WHATAI' | 'Grsai') || 'WHATAI'
+            const provider = grsaiApiKey ? 'Grsai' : ((localStorage.getItem('API_PROVIDER') as 'WHATAI' | 'Grsai') || 'WHATAI')
             if (provider === 'Grsai') {
                 const m = localStorage.getItem('GRSAI_IMAGE_MODEL');
                 if (m === 'nano-banana-fast' || m === 'nano-banana-pro') return m;
@@ -255,7 +263,7 @@ const App: React.FC = () => {
 
     const { updateActiveBoard, updateActiveBoardSilent, setElements, commitAction, handleUndo, handleRedo, getDescendants } = useBoardActions(activeBoardId, setBoards);
 
-    const { handleMergeLayers } = useLayerMerge({ elementsRef, selectedElementIds, getDescendants, commitAction, setSelectedElementIds, generateId, setError, zoom });
+    const { handleMergeLayers } = useLayerMerge({ elementsRef, selectedElementIds, getDescendants, commitAction, generateId, setError });
 
     const { croppingState, setCroppingState, cropAspectRatio, handleCropAspectRatioChange, handleStartCrop, handleCancelCrop, handleConfirmCrop } = useCrop({ setActiveTool, elementsRef, commitAction, setError });
 
@@ -420,6 +428,7 @@ const App: React.FC = () => {
                 setApiProvider={setApiProvider}
                 grsaiApiKey={grsaiApiKey}
                 setGrsaiApiKey={setGrsaiApiKey}
+                isKeyInputLocked={isKeyInputLocked}
             />
             <Toolbar
                 t={t}

@@ -1,286 +1,113 @@
 # BananaPod 项目状态记录
 
 
-## 当前阶段：图层合并导出断图与线宽不一致修复（规划者）
+## 当前阶段：iframe URL Key 注入与设置锁定（规划者）
 
 ### 背景和动机
 
-- 现状：执行“合并图层”后，新生成的图片出现“图片加载错误图标”，不显示合并结果内容；同时当图像与图形/线条一起合并时，合并后的形状描边粗细与当前画布显示不一致（用户感知为“变细”）。
-- 影响：
-  - 合并功能不可用或不可预期，阻断常用工作流（将多元素压平成一张图）。
-  - 影响编辑一致性：用户在某一缩放比例下看到的线条粗细，合并后变成位图再显示会产生明显差异。
-
-### 关键挑战和分析（本阶段）
-
-- 断图（出现加载错误图标）的根因假设：
-  - 合并流程通过“拼 SVG → 以 `data:image/svg+xml` 方式加载 → 绘制到 canvas → 导出 PNG”实现。
-  - 如果拼出来的 SVG 内部 `<image href="...">` 引用了 `blob:`/部分 `http(s)` 资源，在 `data:` SVG 的环境下可能无法被浏览器正确加载（origin / CORS / URL scheme 兼容性），从而在最终导出的 PNG 中表现为断图占位图标。
-- 图片内容显示错误（即使不断图也可能错位）的根因假设：
-  - 画布渲染图片时使用 `preserveAspectRatio="none"`（拉伸填充），而合并拼 SVG 的 `<image>` 若未显式设置该属性，会使用 SVG 默认行为（保持宽高比），导致合并结果与画布显示不一致。
-- 线宽不一致（“变细”）的根因假设：
-  - 画布显示为了缩放时保持视觉线宽稳定，采用 `strokeWidth / zoom`。
-  - 合并导出时若直接使用 `strokeWidth`，在当前 zoom 下导出的位图与画布显示会存在差异（合并当下的视觉线宽不一致）。
-
-### 本阶段高层任务拆分
-
-1. 复现与最小化用例构建
-   - 用包含 `blob:` 图片的场景复现“合并后断图”。
-   - 用非等比拉伸的图片复现“合并后内容错位/显示不一致”。
-   - 用不同 zoom（例如 0.5 / 1 / 2）复现“线宽不一致”。
-   - 成功标准：能稳定复现并可用日志/异常信息定位失败路径。
-
-2. 修复：合并导出中内联图片资源，避免断图
-   - 在合并拼 SVG 前，将所有 `image.href` 尽可能转换为 `data:` URL（`hrefToBlob` → `blobToDataUrl`），写入 SVG 的 `<image href="...">`。
-   - 内联失败时输出必要调试信息（`id/href/error`），并使用原 href 作为 fallback（便于继续定位跨域/协议问题）。
-   - 成功标准：包含 `blob:` 图片的合并结果不再出现断图图标。
-
-3. 修复：对齐图片拉伸规则
-   - 合并拼 SVG 时，对 `<image>` 显式设置 `preserveAspectRatio="none"`，与画布渲染保持一致。
-   - 成功标准：用户把图片拉伸后合并，合并结果内容与画布显示一致。
-
-4. 修复：对齐合并当下的线宽显示
-   - 为 `flattenElementsToImage` 增加可选参数 `{ zoom }`，在拼 SVG 的 `path/shape/line/arrow` 里使用 `strokeWidth / zoom`，确保合并当下与当前画布显示一致。
-   - 在 `useLayerMerge` / `App.tsx` 传入当前 `zoom`。
-   - 成功标准：在任意 zoom 下执行合并，合并生成图片中的线条粗细与合并前当前视图一致。
-
-5. 验证与回归
-   - 手动验证：
-     - `blob:` 图片 + 图形/线条合并不再断图。
-     - 非等比拉伸图片合并后显示一致。
-     - 多缩放比例下合并当下线宽一致。
-   - 命令验证：
-     - `npm run lint`
-     - `npx tsc --noEmit`（如项目采用该命令）
-
-### 项目状态看板（图层合并修复）
-
-#### 已完成
-
-- [x] 初步定位：合并通过 data:SVG 渲染，存在引用资源失败风险。
-- [x] 初步定位：图片拉伸规则与 SVG 默认行为可能不一致。
-- [x] 初步定位：画布显示使用 `strokeWidth / zoom`，合并导出未对齐。
-
-#### 进行中
-
-- [x] 在 `flattenElementsToImage` 中内联图片 href 为 dataURL，并记录调试日志。
-- [x] 在合并拼 SVG 的 `<image>` 设置 `preserveAspectRatio="none"`。
-- [x] 传入当前 `zoom` 并对齐合并当下线宽（`strokeWidth / zoom`）。
-- [x] 完成手动验证并运行 `npm run lint`、`npx tsc --noEmit`。
-
-#### 待办
-
-- [ ] 若内联失败来自跨域图片，评估导入阶段强制转 dataURL 或引入代理策略。
-
-### 执行者反馈或请求帮助（本阶段约定）
-
-- 执行者在每次落地一个任务后，补充：
-  - 涉及文件与改动摘要（例如 `src/utils/canvas.ts`、`src/hooks/useLayerMerge.ts`、`src/App.tsx`）。
-  - Console/Network 关键信息（例如 `[flattenElementsToImage] inline image failed` 的 payload）。
-  - 已运行的命令与结果（lint/typecheck）。
-- 本轮执行者记录：
-  - 已确认 `flattenElementsToImage` 内联图片 href 为 dataURL、为 `<image>` 设置 `preserveAspectRatio="none"`，并在 `path/shape/arrow/line` 中按 `strokeWidth / zoom` 对齐线宽（涉及 `src/utils/canvas.ts`）。
-  - 已确认 `useLayerMerge` 与 `App.tsx` 通过 `zoom` 参数将当前缩放传入 `flattenElementsToImage`（涉及 `src/hooks/useLayerMerge.ts`、`src/App.tsx`）。
-  - 已运行 `npm run lint`、`npx tsc --noEmit`，均成功通过，无新增错误。
-
-### 当前状态/进度跟踪（图层合并修复）
-
-- 规划者：
-  - 已明确两类核心问题：合并断图（资源加载失败）与显示不一致（图片拉伸规则/线宽与 zoom 机制不一致）。
-  - 已给出修复方向：图片资源内联为 dataURL + `<image preserveAspectRatio="none">` + `strokeWidth/zoom` 对齐。
-- 执行者（本轮实现）：
-  - 已按“进行中”四项计划完成实现与验证；如后续发现跨域图片仍存在极端断图场景，可在“待办”任务中继续迭代导入阶段策略。
-
----
-
-## 当前阶段：生成按钮与生图取消能力改造（规划者）
-
-### 背景和动机
-
-- 现状：当前 PromptBar 底部使用文字按钮触发生图，请求开始后仅通过全局 Loading 提示进度，无法在同一入口执行“取消本次生成”，且按钮文案与图标在不同语言下不一致。
-- 症结：
-  - 生图过程中，用户如果发现提示词写错，只能等待请求结束或刷新页面，缺乏“立即中断”的控制点。
-  - 生成按钮缺少明确的状态切换（空输入/可触发/生成中），交互不直观，视觉上也没有统一的图标化设计。
-  - 前端生成管线 `useGenerationPipeline.ts` 为一次性流程，没有显式的“取消信号”或令牌机制，难以在中途停止后续副作用（占位图插入、元素替换等）。
-- 目标：设计并实现一个图标化的生成按钮，具备清晰的三态（未激活/可生成/生成中），并在生成过程中支持点击同一按钮取消本次生图，请求结束后不再更新画布或状态。
-- 范围：仅涉及前端交互与状态管理，包括 PromptBar 组件、App 容器和 `useGenerationPipeline` 生成管线，不调整服务端 API 行为。
-
-### 关键挑战和分析（本阶段）
-
-- 按钮状态机设计：
-  - 需要用最少的状态表达三个维度：输入是否为空、是否在生成中、是否存在可取消的请求。
-  - 按钮颜色保持不变，仅依靠图标和启用/禁用态传达含义，避免破坏现有视觉规范。
-- 取消语义与实现方式：
-  - 后端 API 未必提供硬中断能力，因此前端至少要做到“软取消”：即便请求在后台继续，前端不再消费结果、不更新画布。
-  - 需要一个简单可靠的机制（令牌 token / generationId）区分不同批次的生成，确保取消后旧请求的结果不会覆盖新状态。
-- 与现有生成管线的兼容性：
-  - `useGenerationPipeline.ts` 同时支持文本生图、编辑生成和掩膜重绘，取消机制必须对三种模式统一生效。
-  - 要兼顾占位图插入/替换逻辑，避免在取消后仍残留“生成中”占位元素或错误的选中状态。
-- 用户体验与键盘操作：
-  - 保持 Enter 快捷键仍能触发生图，且在生成中按 Enter 不应再次触发新的请求。
-  - 按钮的 aria-label 与 title 需要随着状态切换（生成/取消）以兼顾可访问性。
-
-### 本阶段高层任务拆分
-
-1. 需求澄清与现状盘点
-   - 梳理当前 PromptBar 中生成按钮的渲染逻辑、文案来源以及启用/禁用条件。
-   - 盘点 `App.tsx` 与 `useGenerationPipeline.ts` 中关于 `isLoading`、错误提示和占位符的状态流转。
-
-2. 设计按钮状态机与图标方案
-   - 定义按钮三态：
-     - 未激活：输入为空，按钮禁用，仍展示统一背景色。
-     - 可生成：输入非空，显示向上箭头图标，点击触发生图。
-     - 生成中：显示暂停/停止图标，点击触发取消。
-   - 明确 aria-label/title 文案切换规则，保证中英文下行为一致。
-
-3. 生成管线取消机制设计
-   - 选择令牌模式：为每次生成分配递增 token，保存在 `useRef` 中。
-   - 设计 `handleCancelGenerate` 接口：将当前 token 作废并清理 `isLoading` 与进度提示。
-   - 在管线内所有异步结果落地前检查 token，一旦不匹配则直接丢弃结果。
-
-4. 前端接线与实现方案
-   - 在 `useGenerationPipeline.ts` 中实现 token + 取消逻辑，并返回 `{ handleGenerate, handleCancelGenerate }`。
-   - 在 `App.tsx` 中接入新的取消函数，将 `isLoading` 与按钮状态关联起来。
-   - 在 `PromptBar.tsx` 中重构生成按钮为图标按钮，拆分点击逻辑（生成 / 取消）。
-
-5. 测试与验证策略
-   - 手动场景：空输入、正常生图、中途取消、取消后立即重新生成、连续多次生成等。
-   - 异常注入：结合 `localStorage('debug.gen.fail')` 模式，验证取消后不会出现“卡在生成中”的假状态。
-   - 回归检查：确认不影响占位符插入与替换、图层选中行为以及键盘快捷键。
-
-### 项目状态看板（生成按钮与取消能力）
-
-#### 已完成
-
-- [x] 规划者：整理生成按钮与取消能力的背景、问题与目标（本文件）。
-- [x] 规划者：给出按钮三态与生成管线取消机制的高层方案。
-
-#### 进行中
-
-
-#### 待办
-
-- [x] 在 `PromptBar.tsx` 中重构生成按钮为图标按钮（向上箭头 / 停止）。
-- [x] 在 `useGenerationPipeline.ts` 中实现 token 驱动的取消逻辑，并导出 `handleCancelGenerate`。
-- [x] 在 `App.tsx` 中将取消函数接入 PromptBar，并统一管理 `isLoading` 与按钮状态。
-
-### 执行者反馈或请求帮助（本阶段约定）
-
-- 执行者在开始实现前，应从“待办”中选中一个任务，将其拆分为 1–3 个可执行的小步骤，并在本节补充：
-  - 涉及的文件与核心改动点。
-  - 可能的风险（如对现有占位符逻辑的影响、与键盘快捷键冲突等）。
-- 实现完成后，执行者需要：
-  - 更新“项目状态看板（生成按钮与取消能力）”中对应条目为已完成。
-  - 在本节记录：实际改动摘要、运行过的命令（如 `npm run lint`、`npx tsc --noEmit`）以及手动测试结论。
-  - 若发现现有生成管线结构不利于引入取消机制，应在此提出重构建议由规划者评估。
-
-### 当前状态/进度跟踪（生成按钮与取消能力）
-
-- 规划者：
-  - 已完成生成按钮三态与取消交互的整体设计，明确了状态机、图标方案以及与生成管线的边界。
-  - 已将实现工作拆分为 PromptBar UI 重构、生成管线取消机制、App 接线与测试三个主要方向，并落入看板待办。
-- 执行者（本轮实现）：
--  - 已在 `PromptBar.tsx` 中将文字生成按钮重构为三态图标按钮：空输入禁用、可生成时显示向上箭头、生图过程中显示圆圈 + 方块停止图标，并通过同一入口触发生成 / 取消。
--  - 已在 `useGenerationPipeline.ts` 中引入基于 `useRef` 的递增 token 机制，封装 `safeSetIsLoading/safeSetError/safeCommitAction/safeSetSelectedElementIds` 等方法，并在所有异步回调和占位符替换逻辑前检查 token，确保取消后旧请求不会继续修改画布或状态，同时导出 `handleCancelGenerate`。
--  - 已在 `App.tsx` 中接入新的 `handleCancelGenerate`，并将其传递给 `PromptBar`，使主生成按钮具备取消当前生图的能力；同时保持原有 `isLoading` 与 Loader 行为不变。
--  - 已运行 `npm run lint` 与 `npx tsc --noEmit`，当前无新增 lint 或类型错误。
-
----
-
-## 当前阶段：设置面板右侧增加更新面板（规划者）
-
-### 背景和动机
-
-- 现状：设置面板 `CanvasSettings` 只展示基础偏好与 API 设置，没有将最近版本的功能更新可视化呈现给用户。
-- 痛点：
-  - 用户不清楚近期版本新增了哪些能力或 UI 改动，只能阅读 `CHANGELOG.md` 等开发文档。
-  - 产品迭代频率较高，但缺少一个“就近可见”的轻量版本日志入口。
-- 目标：
-   - 在设置界面右侧增加一个“更新面板（Update Panel）”，自动展示最近三个版本的功能更新摘要，支持滚动查看且整体高度不超过当前设置面板高度。
-  - 更新内容从 `CHANGELOG.md` 中自动提取，前端只消费结构化摘要，无需在浏览器中解析 Markdown。
+- 现状：项目目前通过设置面板手动输入代理A/代理B的 Key，并持久化到 `localStorage`（例如 `WHATAI_API_KEY`、`GRSAI_API_KEY`）。
+- 新需求：当项目被 iframe 嵌套且 URL 满足 `协议://主机名[:端口]/?key1=xxxx&key2=xxxx` 同时存在时：
+  - 设置界面不可直接输入 Key
+  - Key 需从 URL 中读取：`key1` 对应代理A，`key2` 对应代理B
+- 保持兼容：当项目直接用浏览器打开时，依旧允许在设置面板手动输入 Key。
 
 ### 关键挑战和分析
 
-- 数据来源与抽取方式：
-  - 必须基于现有 `CHANGELOG.md`，不能引入额外的手工维护更新文案，避免信息不一致。
-  - Markdown 结构存在多种类型条目（feat/fix/ui/docs/chore 等），需要筛选出对最终用户有价值的“高亮”项。
-- 构建流程与前端解耦：
-  - 不宜在浏览器侧做复杂正则解析，影响首屏性能并增加错误面。
-  - 更合适的方式是在构建前使用 Node 脚本，生成一个轻量 JSON（最近 3 个版本），供前端直接 `import`。
-- 布局与交互：
-  - 设置面板当前宽度约 `w-80`，需要在不破坏现有视觉的前提下调整为左右两列布局。
-  - 左侧继续展示原有设置项，右侧为更新面板；两侧内部分别滚动，外层 Panel 保持单一高度限制。
-- 国际化与文案：
-  - 标题与描述需要支持中英文切换；版本号与日期保持原样即可。
-  - 更新摘要本身主要来自中文 `CHANGELOG`，短期内先以中文展示为主，后续如有英文 changelog 再扩展。
+- iframe 环境判断：
+  - 需要兼容同源与跨域 iframe；跨域情况下 `window.top` 访问可能抛异常。
+  - 预期策略：`try { window.self !== window.top } catch { true }` 视为 iframe 内。
+- URL 格式与 query 解析：
+  - 需要严格限定“根路径 + query”场景，避免任意带参链接误触发锁定（建议 `location.pathname === '/'`）。
+  - 需要同时存在 `key1` 与 `key2` 才启用锁定，缺一不可。
+- `key2` 的非标准格式兼容：
+  - 示例中 `key2=sk-xxx&1767...` 的尾部片段包含 `&`，若使用 `URLSearchParams` 会被拆成新的参数而丢失。
+  - 预期解析方式：使用字符串切片提取 `key1`/`key2`，其中 `key2` 取 `key2=` 后直到 query 结束（允许包含后续的 `&...` 无名片段）。
+- 现有请求侧依赖 `localStorage`：
+  - 现有服务调用在浏览器侧读取 `localStorage` 来设置请求头；若只更新内存态不落盘，需改动请求层读取来源，改动范围更大。
+  - 最小改动方案：URL 注入时同步写入 `localStorage` 以保持与现有服务逻辑一致。
 
-### 高层任务拆分
+### 本阶段高层任务拆分
 
-1. 基于 CHANGELOG 生成更新摘要 JSON
-   - 编写 Node 脚本（如 `scripts/generateUpdateFeed.mjs`），读取项目根目录 `CHANGELOG.md`。
-   - 解析版本段落：以 `## v...` 作为版本头，截取到下一个 `##` 或文件末尾。
-   - 在每个版本块中筛选以 `- feat(`、`- ui(`、`- style(`、`- fix(`、`- perf(`、`- compat(`、`- refactor(` 开头的条目，裁剪前缀和模块名，只保留自然语言部分。
-   - 每个版本保留前 3 条高亮，组装为 `{ version, date?, highlights[] }` 结构。
-   - 仅输出最近 3 个版本，写入 `src/config/updateFeed.json`。
-   - 在 `package.json` 中配置 `"predev"` 和 `"prebuild"` 钩子自动生成该 JSON，避免手工执行。
+1. 设计并实现 URL 注入触发条件
+   - 判定是否 iframe 内。
+   - 判定 URL 是否为根路径并同时含 `key1`、`key2`。
+   - 成功标准：仅在同时满足“iframe + 根路径 + key1&key2”时触发注入与锁定。
 
-2. 定义前端类型与 UpdatePanel 组件
-   - 在前端定义 `VersionUpdate` 与 `UpdateFeed` 类型，约束 `updateFeed.json` 结构。
-   - 新增 `src/features/settings/UpdatePanel.tsx` 组件：
-     - 接收 `updates: VersionUpdate[]`、`language: 'en' | 'ZH'`、`t`。
-     - 在有限高度内以卡片形式展示最近 3 个版本，内部支持纵向滚动。
-     - 每个版本卡片内容包含：版本号、可选日期、最多 3 条高亮描述。
-   - 处理空数据兜底：无更新时展示“暂无更新记录”文案或静默隐藏。
+2. 实现健壮的 URL key 解析（兼容 `key2` 含 `&` 的尾段）
+   - `key1`：提取 `key1=` 后到 `&key2=` 前（或到下一个 `&` 前）。
+   - `key2`：提取 `key2=` 后到 query 结束，允许包含 `&1767...` 等尾段。
+   - 成功标准：在示例 URL 中解析得到：
+     - 代理A key = `key1` 值
+     - 代理B key = `key2` 值（包含 `&1767...` 尾段）
 
-3. 调整 CanvasSettings 布局接入更新面板
-   - 修改 `src/features/settings/CanvasSettings.tsx`：
-     - 将原有内容区改为左右布局：左侧为原设置项，右侧为 `UpdatePanel`。
-     - 适度增大 Panel 宽度（如 `w-[720px] max-w-[95vw]`），保证两侧内容可读。
-     - 左右列设为 `h-full` + `overflow-y-auto`，使两侧各自滚动，整体高度仍由 Panel 的 `max-h-[85vh]` 控制。
-   - 在 CanvasSettings 中 `import updates from '@/config/updateFeed.json'`，将其与 `language`、`t` 一并传入 `UpdatePanel`。
-   - 根据需要在小屏幕隐藏右侧更新面板（如 `hidden md:block`），防止窄屏拥挤。
+3. 在凭证 hook 中接入注入与锁定状态
+   - 在 `useCredentials` 初始化/挂载阶段检测触发条件。
+   - 触发时将解析出的 key 写入：
+     - 内存 state（用于 UI 展示）
+     - `localStorage`（用于请求层读取）
+   - 对外暴露 `isKeyInputLocked`（或 `keySource: 'url' | 'manual'`）供 UI 使用。
+   - 成功标准：在 iframe + URL keys 场景下刷新页面仍能从 URL 注入并生效。
 
-4. 国际化文案补充与 UI 微调
-   - 在 `src/i18n/translations.ts` 的 `settings` 下新增：
-     - `updatePanelTitle`：`'Latest updates'` / `'最近更新'`
-     - `updatePanelFromChangelog`（可选）：说明“基于 CHANGELOG.md 总结”。
-   - 在 UpdatePanel 中使用 `t('settings.updatePanelTitle')` 等文案，保持与现有设置面板风格一致。
-   - 调整右侧卡片的字体大小、间距与滚动条样式，复用 `pod-scrollbar`。
+4. 在设置面板锁定输入与保存入口
+   - `CanvasSettings` 输入框在锁定时 `disabled/readOnly`，并阻止 `onChange` 写入。
+   - 保存按钮在锁定时禁用或隐藏，避免误导。
+   - 可选：在输入框附近提示“已从 URL 注入，iframe 模式不可手动修改”。
+   - 成功标准：锁定时无法手动修改；非锁定时行为与现状一致。
 
-5. 验证与回归测试
+5. 验证与回归
    - 手动验证：
-     - 启动 `npm run dev`，打开设置面板，确认右侧展示最近 3 个版本的更新摘要，支持滚动且高度不超出 Panel。
-     - 修改 `CHANGELOG.md` 新增一个版本号，重新运行 dev/build，确认右侧自动更新，且只保留最新 3 个版本。
+     - iframe + URL 同时带 `key1`/`key2`：输入不可编辑，代理A/代理B分别使用对应 key。
+     - 非 iframe 直接打开：可手动输入/保存，刷新后从 `localStorage` 读取。
+     - 缺少 `key1` 或 `key2`：不锁定输入。
    - 命令验证：
-     - 运行 `npm run lint`、`npx tsc --noEmit`、`npm run build`，确保新脚本与组件无 lint/类型/构建错误。
+     - `npm run lint`
+     - `npx tsc --noEmit`
 
-### 项目状态看板（设置面板右侧更新面板）
+### 项目状态看板（iframe URL Key 注入与设置锁定）
 
 #### 已完成
 
-- [x] 规划者：梳理设置面板右侧更新面板的需求背景与约束条件。
-- [x] 规划者：输出基于 CHANGELOG 的数据抽取方案与前端组件整体设计。
-- [x] 执行者：设计并实现 `generateUpdateFeed` Node 脚本，从 `CHANGELOG.md` 生成结构化 `updateFeed.json`。
-- [x] 执行者：实现 `UpdatePanel` 前端组件，并在 `CanvasSettings` 中完成布局改造。
-- [x] 执行者：补充 i18n 文案与样式，执行 lint/typecheck/build 与手动验证。
-- [x] 执行者：根据用户反馈调整布局（左侧宽度固定 200px，优化紧凑度）。
-- [x] 执行者：优化 API Key 设置区布局，改为纵向排列，防止窄屏下溢出。
-- [x] 执行者：将保存按钮调整为右对齐紧凑样式，符合整体 UI 设计。
-- [x] 执行者：统一保存按钮圆角样式 (rounded-md)，与设置面板其他元素保持一致。
-- [x] 执行者：调整更新摘要生成逻辑，仅展示最近 2 个版本。
+- [x] 规划者：明确触发条件（iframe + 根路径 + 同时存在 key1/key2）。
+- [x] 规划者：明确解析策略（字符串切片，`key2` 取到 query 末尾）。
+- [x] 规划者：明确改动点（`useCredentials` 注入、`CanvasSettings` 锁定、`App.tsx` 透传）。
 
 #### 进行中
 
-- [ ] 评估后续是否需要英文 `CHANGELOG` 或更精细的高亮规则，以提升英文界面的可读性。
+- [x] 执行者：在 `useCredentials` 中实现 URL 注入并暴露锁定状态。
+- [x] 执行者：在 `CanvasSettings` 中锁定输入与保存入口，并接线到 `App.tsx`。
+- [x] 执行者：完成手动验证并运行 `npm run lint`、`npx tsc --noEmit`。
 
 #### 待办
 
-- [ ] (可选) 优化脚本以支持更多格式的 Changelog 标题或自定义高亮标签。
+- [ ] 评估是否需要“URL 注入不落盘”模式（避免写入 `localStorage` 的安全顾虑）。
 
-### 执行者反馈或请求帮助（设置面板右侧更新面板）
+### 执行者反馈或请求帮助（本阶段约定）
+
+- 执行者在落地每个任务后补充：
+  - 涉及文件与改动摘要（建议至少包含：`src/hooks/useCredentials.ts`、`src/features/settings/CanvasSettings.tsx`、`src/App.tsx`）。
+  - 关键调试信息（建议包含：是否判定为 iframe、是否命中注入、解析到的 key 长度/是否为空；避免输出完整 key）。
+  - 已运行的命令与结果（`npm run lint`、`npx tsc --noEmit`）。
 
 - 执行者（本轮实现）：
-  - 已编写 `scripts/generateUpdateFeed.mjs` 并配置 `predev/prebuild` 钩子，实现了从 `CHANGELOG.md` 提取并按版本号倒序生成最近 3 个版本的 JSON 数据。
-  - 已新增 `src/features/settings/UpdatePanel.tsx` 组件，并调整 `CanvasSettings.tsx` 为左右分栏布局（左侧设置，右侧更新面板）。
-  - 已更新 `src/i18n/translations.ts` 添加中英文标题文案。
-  - 运行 `npm run lint` 和 `npx tsc --noEmit` 均通过；脚本生成的 JSON 数据准确无误。
-  - 注意：`UpdatePanel` 在宽度小于 `md` (768px) 时会自动隐藏，以适应移动端/小屏布局。
+  - `src/hooks/useCredentials.ts`：
+    - 新增 iframe + URL 根路径 + 同时存在 `key1`/`key2` 的检测。
+    - 通过字符串切片解析 query，其中 `key2` 支持携带 `&1767...` 这类无名尾段。
+    - 若命中注入：初始化时直接使用 URL key，并在 effect 中同步写入 `localStorage`，同时暴露 `isKeyInputLocked`。
+    - 调试输出：`[Credentials] url injected keys enabled`（仅输出 key 长度与命中状态，不输出完整 key）。
+  - `src/features/settings/CanvasSettings.tsx`：
+    - 新增 `isKeyInputLocked` 入参；锁定时 key 输入框 `readOnly` 且 `onChange` 直接返回。
+  - `src/App.tsx`：
+    - 透传 `isKeyInputLocked` 给 `CanvasSettings`。
+    - 当检测到存在 `key2`（代理B key）时，初始化默认选择 `apiProvider = 'Grsai'`，从而让 PromptBar 默认展示代理B模型列表。
+  - 已运行命令：
+    - `npm run lint` ✅
+    - `npx tsc --noEmit` ✅
+
+### 当前状态/进度跟踪（iframe URL Key 注入与设置锁定）
+
+- 规划者：
+  - 已完成方案设计与风险点分析（iframe 判定、`key2` 非标准 query 兼容、与 `localStorage` 依赖的取舍）。
+  - 下一步交由执行者按看板“进行中”实现并验证。
+- 执行者（本轮实现）：
+  - 已完成 URL 注入、锁定状态透传与设置面板输入锁定。
+  - 命令验证已通过；建议由用户在实际 iframe 场景中做一次端到端验证（确认代理A/代理B分别使用 `key1`/`key2`）。

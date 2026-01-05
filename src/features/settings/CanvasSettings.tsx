@@ -20,6 +20,7 @@ interface CanvasSettingsProps {
     setApiProvider: (p: 'WHATAI' | 'Grsai') => void;
     grsaiApiKey: string;
     setGrsaiApiKey: (key: string) => void;
+    isKeyInputLocked: boolean;
 }
 
 
@@ -39,6 +40,7 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
     setApiProvider,
     grsaiApiKey,
     setGrsaiApiKey,
+    isKeyInputLocked,
 }) => {
     const DEFAULT_CANVAS_BG = '#0F0D13';
     const isValidHexColor = (v: string) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v);
@@ -138,22 +140,24 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
                                     </button>
                                 </div>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-[var(--text-heading)]">{t('settings.apiKey')}</label>
-                                <div className="flex flex-col gap-1.5 items-end">
-                                    <input
-                                        type="password"
-                                        value={apiProvider === 'Grsai' ? grsaiApiKey : apiKey}
-                                        onChange={(e) => {
-                                            const v = (e.target as HTMLInputElement).value;
-                                            if (apiProvider === 'Grsai') setGrsaiApiKey(v); else setApiKey(v);
-                                        }}
-                                        placeholder={apiProvider === 'Grsai' ? (language === 'ZH' ? '代理B 令牌' : 'Proxy B Token') : (language === 'ZH' ? '代理A 令牌' : 'Proxy A Token')}
-                                        className="pod-input pod-input-sm w-full text-xs"
-                                    />
-                                    <Button onClick={onClose} size="sm" className="h-6 px-3 text-xs w-auto rounded-md">{t('settings.apiKeySave')}</Button>
+                            {!isKeyInputLocked && (
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-[var(--text-heading)]">{t('settings.apiKey')}</label>
+                                    <div className="flex flex-col gap-1.5 items-end">
+                                        <input
+                                            type="password"
+                                            value={apiProvider === 'Grsai' ? grsaiApiKey : apiKey}
+                                            onChange={(e) => {
+                                                const v = (e.target as HTMLInputElement).value;
+                                                if (apiProvider === 'Grsai') setGrsaiApiKey(v); else setApiKey(v);
+                                            }}
+                                            placeholder={apiProvider === 'Grsai' ? (language === 'ZH' ? '代理B 令牌' : 'Proxy B Token') : (language === 'ZH' ? '代理A 令牌' : 'Proxy A Token')}
+                                            className="pod-input pod-input-sm w-full text-xs"
+                                        />
+                                        <Button onClick={onClose} size="sm" className="h-6 px-3 text-xs w-auto rounded-md">{t('settings.apiKeySave')}</Button>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                         </div>
 
