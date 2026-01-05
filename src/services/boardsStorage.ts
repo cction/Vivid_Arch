@@ -3,7 +3,7 @@ import { stringifyForStorage } from '@/utils/jsonStorage'
 import { hrefToBlob, putImageBlob, getImageBlob, getKnownImageHashFromObjectUrl, getObjectUrlForImageHash, getBaseDir, ensureDirs, blobToDataUrl } from '@/services/imageStore'
 import { slimBoardAsync, slimBoardForLocalStorage, pickRecentBoards, inflateBoardsForSession } from '@/services/boardSession'
 const dbName = 'BananaPodDB'
-const dbVersion = 3
+const dbVersion = 4
 let dbPromise: Promise<IDBDatabase> | null = null
 const isBrowserEnv = (typeof window !== 'undefined')
 const canUseIndexedDB = isBrowserEnv && (typeof indexedDB !== 'undefined')
@@ -73,6 +73,7 @@ function openDB(): Promise<IDBDatabase> {
     req.onupgradeneeded = () => {
       const db = req.result
       if (db.objectStoreNames.contains('history')) db.deleteObjectStore('history')
+      if (!db.objectStoreNames.contains('images')) db.createObjectStore('images', { keyPath: 'hash' })
       if (!db.objectStoreNames.contains('lastSession')) db.createObjectStore('lastSession')
     }
     req.onsuccess = () => resolve(req.result)

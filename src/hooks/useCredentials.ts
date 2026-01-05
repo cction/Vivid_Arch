@@ -61,7 +61,7 @@ function tryGetInjectedKeysFromUrl(): { apiKey: string; grsaiApiKey: string } | 
   if (!hasKey1 && !hasKey2) return null
 
   const apiKey = hasKey1 ? safeDecodeURIComponent(extractQueryValue(query, 'key1', 'nextAmp')) : ''
-  const grsaiApiKey = hasKey2 ? safeDecodeURIComponent(extractQueryValue(query, 'key2', 'nextNamedOrEnd')) : ''
+  const grsaiApiKey = hasKey2 ? safeDecodeURIComponent(extractQueryValue(query, 'key2', 'nextAmp')) : ''
 
   if (!apiKey && !grsaiApiKey) return null
   return { apiKey, grsaiApiKey }

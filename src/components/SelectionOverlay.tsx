@@ -52,35 +52,43 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
   handleDeleteElement,
   handleStopEditing,
 }) => {
+  const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1
+  const safePanOffset: Point = {
+    x: Number.isFinite(panOffset.x) ? panOffset.x : 0,
+    y: Number.isFinite(panOffset.y) ? panOffset.y : 0,
+  }
+  const isRectFinite = (r: Rect) => Number.isFinite(r.x) && Number.isFinite(r.y) && Number.isFinite(r.width) && Number.isFinite(r.height)
   const singleSelectedElement = selectedElementIds.length === 1 ? elements.find(el => el.id === selectedElementIds[0]) : null;
 
   return (
     <>
-      {lassoPath && (
-        <path d={lassoPath.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ')} stroke="var(--color-blue-500)" strokeWidth={1 / zoom} strokeDasharray={`${4 / zoom} ${4 / zoom}`} fill="var(--color-blue-500)" fillOpacity="0.1" />
+      {lassoPath && lassoPath.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)) && (
+        <path d={lassoPath.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ')} stroke="var(--color-blue-500)" strokeWidth={1 / z} strokeDasharray={`${4 / z} ${4 / z}`} fill="var(--color-blue-500)" fillOpacity="0.1" />
       )}
 
-      {alignmentGuides.map((g, i) => (
-        <line key={i} x1={g.type === 'v' ? g.position : g.start} y1={g.type === 'h' ? g.position : g.start} x2={g.type === 'v' ? g.position : g.end} y2={g.type === 'h' ? g.position : g.end} stroke="var(--color-red-500)" strokeWidth={1 / zoom} strokeDasharray={`${4 / zoom} ${2 / zoom}`} />
+      {alignmentGuides.filter(g => Number.isFinite(g.position) && Number.isFinite(g.start) && Number.isFinite(g.end)).map((g, i) => (
+        <line key={i} x1={g.type === 'v' ? g.position : g.start} y1={g.type === 'h' ? g.position : g.start} x2={g.type === 'v' ? g.position : g.end} y2={g.type === 'h' ? g.position : g.end} stroke="var(--color-red-500)" strokeWidth={1 / z} strokeDasharray={`${4 / z} ${2 / z}`} />
       ))}
 
       {selectedElementIds.length > 0 && !croppingState && !editingElement && (() => {
         if (selectedElementIds.length > 1) {
           const b = getSelectionBounds(selectedElementIds);
+          if (!isRectFinite(b)) return null
           const sw = 380; // Increased width for new UI
           const sh = 64; // Increased height
-          const cw = sw / zoom;
-          const ch = sh / zoom;
+          const cw = sw / z;
+          const ch = sh / z;
           const x = b.x + b.width / 2 - cw / 2;
-          const y = b.y - ch - 10 / zoom;
+          const y = b.y - ch - 10 / z;
           return (
             <foreignObject x={x} y={y} width={cw} height={ch} className="pod-foreign-object-visible">
-              <ContextToolbar mode="multi" toolbarScreenWidth={sw} toolbarScreenHeight={sh} zoom={zoom} t={t} onAlign={handleAlignSelection} />
+              <ContextToolbar mode="multi" toolbarScreenWidth={sw} toolbarScreenHeight={sh} zoom={z} t={t} onAlign={handleAlignSelection} />
             </foreignObject>
           );
         } else if (singleSelectedElement) {
           const el = singleSelectedElement;
           const b = getElementBounds(el, elements);
+          if (!isRectFinite(b)) return null
           let sw = 340; // Minimum width for consistency
           if (el.type === 'shape') {
             sw = 400;
@@ -92,10 +100,10 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
           if (el.type === 'video') sw = 340;
           if (el.type === 'group') sw = 340;
           const sh = 64; // Increased height
-          const cw = sw / zoom;
-          const ch = sh / zoom;
+          const cw = sw / z;
+          const ch = sh / z;
           const x = b.x + b.width / 2 - cw / 2;
-          const y = b.y - ch - 10 / zoom;
+          const y = b.y - ch - 10 / z;
           return (
             <foreignObject x={x} y={y} width={cw} height={ch} className="pod-foreign-object-visible">
               <ContextToolbar 
@@ -103,7 +111,7 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
                 element={el} 
                 toolbarScreenWidth={sw} 
                 toolbarScreenHeight={sh} 
-                zoom={zoom} 
+                zoom={z} 
                 t={t} 
                 onCopy={handleCopyElement} 
                 onDownloadImage={handleDownloadImage} 
@@ -120,6 +128,7 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
       {editingElement && (() => {
         const el = elements.find(e => e.id === editingElement.id) as TextElement;
         if (!el) return null;
+        if (!Number.isFinite(el.x) || !Number.isFinite(el.y) || !Number.isFinite(el.width) || !Number.isFinite(el.height)) return null
         return (
           <foreignObject x={el.x} y={el.y} width={el.width} height={el.height} onMouseDown={(e) => e.stopPropagation()}>
             <textarea
@@ -134,18 +143,18 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
         );
       })()}
 
-      {croppingState && (
+      {croppingState && isRectFinite(croppingState.cropBox) && typeof window !== 'undefined' && (
         <g>
           <path
-            d={`M ${-panOffset.x / zoom},${-panOffset.y / zoom} H ${window.innerWidth / zoom - panOffset.x / zoom} V ${window.innerHeight / zoom - panOffset.y / zoom} H ${-panOffset.x / zoom} Z M ${croppingState.cropBox.x},${croppingState.cropBox.y} v ${croppingState.cropBox.height} h ${croppingState.cropBox.width} v ${-croppingState.cropBox.height} Z`}
+            d={`M ${-safePanOffset.x / z},${-safePanOffset.y / z} H ${window.innerWidth / z - safePanOffset.x / z} V ${window.innerHeight / z - safePanOffset.y / z} H ${-safePanOffset.x / z} Z M ${croppingState.cropBox.x},${croppingState.cropBox.y} v ${croppingState.cropBox.height} h ${croppingState.cropBox.width} v ${-croppingState.cropBox.height} Z`}
             fill="rgba(0,0,0,0.5)"
             fillRule="evenodd"
             pointerEvents="none"
           />
-          <rect x={croppingState.cropBox.x} y={croppingState.cropBox.y} width={croppingState.cropBox.width} height={croppingState.cropBox.height} fill="none" stroke="var(--color-neutral-white)" strokeWidth={2 / zoom} pointerEvents="all" />
+          <rect x={croppingState.cropBox.x} y={croppingState.cropBox.y} width={croppingState.cropBox.width} height={croppingState.cropBox.height} fill="none" stroke="var(--color-neutral-white)" strokeWidth={2 / z} pointerEvents="all" />
           {(() => {
             const { x, y, width, height } = croppingState.cropBox;
-            const s = 10 / zoom;
+            const s = 10 / z;
             const hs = [
               { n: 'tl', x, y, c: 'nwse-resize' },
               { n: 'tr', x: x + width, y, c: 'nesw-resize' },
@@ -162,7 +171,7 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
                 height={s} 
                 fill="var(--color-neutral-white)" 
                 stroke="var(--color-blue-500)" 
-                strokeWidth={1 / zoom} 
+                strokeWidth={1 / z} 
                 className={h.c === 'nwse-resize' ? 'cursor-nwse-resize' : 'cursor-nesw-resize'} 
               />
             ));
@@ -170,10 +179,9 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
         </g>
       )}
 
-      {selectionBox && (
-        <rect x={selectionBox.x} y={selectionBox.y} width={selectionBox.width} height={selectionBox.height} fill="var(--color-blue-500)" fillOpacity="0.1" stroke="var(--color-blue-500)" strokeWidth={1 / zoom} />
+      {selectionBox && isRectFinite(selectionBox) && (
+        <rect x={selectionBox.x} y={selectionBox.y} width={selectionBox.width} height={selectionBox.height} fill="var(--color-blue-500)" fillOpacity="0.1" stroke="var(--color-blue-500)" strokeWidth={1 / z} />
       )}
     </>
   );
 };
-

@@ -21,6 +21,10 @@
 - 所有外部调用输出需包含调试信息（状态码、错误消息、关键参数），便于快速定位问题。
 - 网络错误（如 `Recv failure: Connection was reset`）需与认证错误区分；优先验证令牌权限与有效性，再排查网络或代理。
 
+## IndexedDB（LastSession / 图片存储）
+- 同一个 IndexedDB 数据库若被不同模块以不同 version / 不同 objectStore 初始化，可能出现 “transaction 指定 object store 不存在” 的运行时异常（例如 lastSession 写入失败回退 localStorage）。
+- 处理策略：统一 DB 版本号，并在升级回调里确保创建所有必需的 stores（如 `images` 与 `lastSession`），避免模块间初始化顺序导致的缺 store。
+
 ## 撤销历史（History）
 - History v2 以 `patch` 记录增量（added/removed/updated + before/afterOrder），可通过 `localStorage.setItem('BANANAPOD_HISTORY_DIFF','1')` 启用；默认保持 v1 快照。
 - 超过 `MAX_HISTORY` 时，v2 会把被裁剪后的首项物化为 `snapshot`，保证撤销链条可继续回放。

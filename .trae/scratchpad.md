@@ -111,3 +111,34 @@
 - 执行者（本轮实现）：
   - 已完成 URL 注入、锁定状态透传与设置面板输入锁定。
   - 命令验证已通过；建议由用户在实际 iframe 场景中做一次端到端验证（确认代理A/代理B分别使用 `key1`/`key2`）。
+
+## 当前阶段：运行时错误修复（执行者）
+
+### 背景和动机
+
+- 线上运行出现两类报错：
+  - SVG 渲染属性出现 `Infinity/-Infinity`（例如 `<rect x="-Infinity">`、`<g transform="translate(-Infinity, Infinity)">`、`<foreignObject x="-Infinity">`）。
+  - `[LastSession] indexedDB save failed ... One of the specified object stores was not found.`，导致会话保存回退到 localStorage。
+
+### 项目状态看板（运行时错误修复）
+
+#### 已完成
+
+- [x] 修复 LastSession IndexedDB object store 缺失导致的保存失败
+- [x] 修复 SelectionOverlay/Canvas 渲染时 Infinity/-Infinity 导致的 SVG 属性错误
+- [x] 更新 dist，并在本地 preview 验证 build/lint/tsc 通过
+
+### 执行者反馈或请求帮助（运行时错误修复）
+
+- IndexedDB：
+  - 发现根因是同一个 DB（`BananaPodDB`）在不同模块以不同版本/不同 store 初始化，可能导致“images 存在但 lastSession 不存在”（或反之）。
+  - 处理方式：统一将 DB version 升级到 4，并在两个 openDB 的 `onupgradeneeded` 中确保同时创建 `images` 与 `lastSession`（且清理旧 `history` store）。
+  - 关键调试信息：原错误栈包含 `transaction('lastSession')` 报 “object stores not found”，修复后应不再触发该异常（首次打开会触发升级）。
+
+- SVG Infinity：
+  - 处理方式：对 `zoom/panOffset` 做有限值兜底（zoom<=0 或非 finite 退回 1，pan 非 finite 退回 0），并在 `SelectionOverlay` 内对 selection bounds / selectionBox 做 finite 校验，非 finite 直接不渲染相关 overlay（避免把 Infinity 写进 SVG 属性）。
+
+- 已运行命令：
+  - `npm run lint` ✅
+  - `npx tsc --noEmit` ✅
+  - `npm run build` ✅（已更新 dist）

@@ -74,6 +74,11 @@ export const Canvas: React.FC<CanvasProps> = ({
   onDragLeave,
   onDrop,
 }) => {
+  const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1
+  const safePanOffset: Point = {
+    x: Number.isFinite(panOffset.x) ? panOffset.x : 0,
+    y: Number.isFinite(panOffset.y) ? panOffset.y : 0,
+  }
   const isElementVisible = (element: Element, allElements: Element[]): boolean => {
     if (element.isVisible === false) return false;
     if (element.parentId) {
@@ -122,8 +127,8 @@ export const Canvas: React.FC<CanvasProps> = ({
           return null;
         })}
       </defs>
-      <g transform={`translate(${panOffset.x}, ${panOffset.y}) scale(${zoom})`}>
-        <rect x={-panOffset.x / zoom} y={-panOffset.y / zoom} width={`calc(100% / ${zoom})`} height={`calc(100% / ${zoom})`} fill="url(#grid)" />
+      <g transform={`translate(${safePanOffset.x}, ${safePanOffset.y}) scale(${z})`}>
+        <rect x={-safePanOffset.x / z} y={-safePanOffset.y / z} width={`calc(100% / ${z})`} height={`calc(100% / ${z})`} fill="url(#grid)" />
         {elements.map(el => {
           if (!isElementVisible(el, elements)) return null;
           const isSelected = selectedElementIds.includes(el.id);
@@ -131,23 +136,23 @@ export const Canvas: React.FC<CanvasProps> = ({
           if (isSelected && !croppingState) {
             if (selectedElementIds.length > 1 || el.type === 'path' || el.type === 'arrow' || el.type === 'line' || el.type === 'group') {
               const b = getElementBounds(el, elements);
-              selectionComponent = <rect x={b.x} y={b.y} width={b.width} height={b.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} pointerEvents="none" />
+              selectionComponent = <rect x={b.x} y={b.y} width={b.width} height={b.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2 / z} strokeDasharray={`${6 / z} ${4 / z}`} pointerEvents="none" />
             } else if (el.type === 'image' || el.type === 'shape' || el.type === 'text' || el.type === 'video') {
-              const s = 8 / zoom;
+              const s = 8 / z;
               const hs = [
                 { n: 'tl', x: el.x, y: el.y, c: 'nwse-resize' }, { n: 'tm', x: el.x + el.width / 2, y: el.y, c: 'ns-resize' }, { n: 'tr', x: el.x + el.width, y: el.y, c: 'nesw-resize' },
                 { n: 'ml', x: el.x, y: el.y + el.height / 2, c: 'ew-resize' }, { n: 'mr', x: el.x + el.width, y: el.y + el.height / 2, c: 'ew-resize' },
                 { n: 'bl', x: el.x, y: el.y + el.height, c: 'nesw-resize' }, { n: 'bm', x: el.x + el.width / 2, y: el.y + el.height, c: 'ns-resize' }, { n: 'br', x: el.x + el.width, y: el.y + el.height, c: 'nwse-resize' },
               ];
               selectionComponent = <g>
-                <rect x={el.x} y={el.y} width={el.width} height={el.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2 / zoom} pointerEvents="none" />
-                {hs.map(h => <rect key={h.n} data-handle={h.n} x={h.x - s / 2} y={h.y - s / 2} width={s} height={s} fill="white" stroke="#3b82f6" strokeWidth={1 / zoom} className={`cursor-${h.c}`} />)}
+                <rect x={el.x} y={el.y} width={el.width} height={el.height} fill="none" stroke="rgb(59 130 246)" strokeWidth={2 / z} pointerEvents="none" />
+                {hs.map(h => <rect key={h.n} data-handle={h.n} x={h.x - s / 2} y={h.y - s / 2} width={s} height={s} fill="white" stroke="#3b82f6" strokeWidth={1 / z} className={`cursor-${h.c}`} />)}
               </g>
             }
           }
           if (el.type === 'path') {
             const d = el.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-            return <g key={el.id} data-id={el.id} className="cursor-pointer"><path d={d} stroke={el.strokeColor} strokeWidth={el.strokeWidth / zoom} fill="none" strokeLinecap="round" strokeLinejoin="round" pointerEvents="stroke" strokeOpacity={el.strokeOpacity} />{selectionComponent}</g>;
+            return <g key={el.id} data-id={el.id} className="cursor-pointer"><path d={d} stroke={el.strokeColor} strokeWidth={el.strokeWidth / z} fill="none" strokeLinecap="round" strokeLinejoin="round" pointerEvents="stroke" strokeOpacity={el.strokeOpacity} />{selectionComponent}</g>;
           }
           if (el.type === 'arrow') {
             const [s, e] = el.points;
@@ -157,11 +162,11 @@ export const Canvas: React.FC<CanvasProps> = ({
             const le = { x: e.x - ah * Math.cos(ang), y: e.y - ah * Math.sin(ang) };
             const h1 = { x: e.x - hl * Math.cos(ang - Math.PI / 6), y: e.y - hl * Math.sin(ang - Math.PI / 6) };
             const h2 = { x: e.x - hl * Math.cos(ang + Math.PI / 6), y: e.y - hl * Math.sin(ang + Math.PI / 6) };
-            return <g key={el.id} data-id={el.id} className="cursor-pointer"><line x1={s.x} y1={s.y} x2={le.x} y2={le.y} stroke={el.strokeColor} strokeWidth={el.strokeWidth / zoom} strokeLinecap="round" /><polygon points={`${e.x},${e.y} ${h1.x},${h1.y} ${h2.x},${h2.y}`} fill={el.strokeColor} />{selectionComponent}</g>;
+            return <g key={el.id} data-id={el.id} className="cursor-pointer"><line x1={s.x} y1={s.y} x2={le.x} y2={le.y} stroke={el.strokeColor} strokeWidth={el.strokeWidth / z} strokeLinecap="round" /><polygon points={`${e.x},${e.y} ${h1.x},${h1.y} ${h2.x},${h2.y}`} fill={el.strokeColor} />{selectionComponent}</g>;
           }
           if (el.type === 'line') {
             const [s, e] = el.points;
-            return <g key={el.id} data-id={el.id} className="cursor-pointer"><line x1={s.x} y1={s.y} x2={e.x} y2={e.y} stroke={el.strokeColor} strokeWidth={el.strokeWidth / zoom} strokeLinecap="round" />{selectionComponent}</g>;
+            return <g key={el.id} data-id={el.id} className="cursor-pointer"><line x1={s.x} y1={s.y} x2={e.x} y2={e.y} stroke={el.strokeColor} strokeWidth={el.strokeWidth / z} strokeLinecap="round" />{selectionComponent}</g>;
           }
           if (el.type === 'text') {
             const isEditing = editingElement?.id === el.id;
@@ -183,7 +188,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             else if (el.shapeType === 'triangle') jsx = <polygon points={`${el.width / 2},0 0,${el.height} ${el.width},${el.height}`} />
             return (
               <g key={el.id} data-id={el.id} transform={`translate(${el.x}, ${el.y})`} className="cursor-pointer">
-                {jsx && React.cloneElement(jsx, { fill: el.fillColor, stroke: el.strokeColor, strokeWidth: el.strokeWidth / zoom, strokeDasharray: el.strokeDashArray ? el.strokeDashArray.join(' ') : 'none' })}
+                {jsx && React.cloneElement(jsx, { fill: el.fillColor, stroke: el.strokeColor, strokeWidth: el.strokeWidth / z, strokeDasharray: el.strokeDashArray ? el.strokeDashArray.join(' ') : 'none' })}
                 {selectionComponent && React.cloneElement(selectionComponent as React.ReactElement, { transform: `translate(${-el.x}, ${-el.y})` })}
               </g>
             );
@@ -195,7 +200,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             const isPh = el.href === PLACEHOLDER_DATA_URL;
             const imgEl = el as ImageElement;
             const showSpinner = imgEl.isGenerating;
-            const spinnerR = Math.min(Math.min(el.width, el.height) / 4, 12 / zoom);
+            const spinnerR = Math.min(Math.min(el.width, el.height) / 4, 12 / z);
 
             if (isPh) {
               return (
@@ -205,7 +210,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     y={el.y}
                     width={el.width}
                     height={el.height}
-                    style={{ fill: 'var(--bg-component-solid)', stroke: 'var(--border-color)', strokeWidth: 1 / Math.max(1, zoom) } as React.CSSProperties}
+                    style={{ fill: 'var(--bg-component-solid)', stroke: 'var(--border-color)', strokeWidth: 1 / Math.max(1, z) } as React.CSSProperties}
                     clipPath={hasR ? `url(#${cid})` : undefined}
                   />
                   {(el as ImageElement).previewHref && (
@@ -222,7 +227,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     />
                   )}
                   {showSpinner && (
-                    <g transform={`translate(${el.x + el.width / 2}, ${el.y + el.height / 2}) scale(${1 / zoom})`}>
+                    <g transform={`translate(${el.x + el.width / 2}, ${el.y + el.height / 2}) scale(${1 / z})`}>
                       <g transform="translate(-12, -24)">
                         <svg width={24} height={24} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <circle cx="12" cy="12" r="10" stroke="#A78BFA" strokeWidth="4" opacity="0.25" />
@@ -260,7 +265,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                       href={el.href}
                       width={el.width}
                       height={el.height}
-                      zoom={zoom}
+                      zoom={z}
                     />
                   </g>
                 )}
@@ -303,8 +308,8 @@ export const Canvas: React.FC<CanvasProps> = ({
           return null;
         })}
         <SelectionOverlay
-          panOffset={panOffset}
-          zoom={zoom}
+          panOffset={safePanOffset}
+          zoom={z}
           elements={elements}
           selectedElementIds={selectedElementIds}
           selectionBox={selectionBox}

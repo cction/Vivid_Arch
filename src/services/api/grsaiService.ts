@@ -137,6 +137,19 @@ function isSupportedAspectRatioText(r: string | null | undefined): boolean {
 }
 
 type ImageItem = { url?: string; b64_json?: string }
+
+function extractErrorMessage(raw: { [k: string]: unknown }): string {
+  const j = raw as unknown as { code?: number | string; msg?: string; error?: string; data?: { error?: string; failure_reason?: string; msg?: string } }
+  if (j.error && typeof j.error === 'string' && j.error.trim()) return j.error.trim()
+  if (j.msg && typeof j.msg === 'string' && j.msg.trim()) return j.msg.trim()
+  if (j.data) {
+    if (j.data.error && typeof j.data.error === 'string' && j.data.error.trim()) return j.data.error.trim()
+    if (j.data.failure_reason && typeof j.data.failure_reason === 'string' && j.data.failure_reason.trim()) return j.data.failure_reason.trim()
+    if (j.data.msg && typeof j.data.msg === 'string' && j.data.msg.trim()) return j.data.msg.trim()
+  }
+  return ''
+}
+
 async function parseImageJson(json: { data?: unknown; results?: ImageItem[]; [k: string]: unknown }, usedModel: string): Promise<{ newImageBase64: string | null; newImageMimeType: string | null; textResponse: string | null }> {
   let item: ImageItem | undefined
   if (json && Array.isArray((json as { data?: ImageItem[] }).data)) item = (json as { data?: ImageItem[] }).data![0]
@@ -219,15 +232,23 @@ export async function generateImageFromText(
     const ct = resp.headers.get('content-type') || ''
     const text = await resp.text()
     if (!ct.includes('application/json')) throw new Error(`非 JSON 返回 (${ct}) ${text.slice(0,200)}`)
-    const json = JSON.parse(text) as { results?: ImageItem[]; id?: string; task_id?: string; data?: { id?: string; results?: ImageItem[] } }
+    const json = JSON.parse(text) as { code?: number | string; msg?: string; error?: string; results?: ImageItem[]; id?: string; task_id?: string; data?: { id?: string; results?: ImageItem[]; error?: string; failure_reason?: string; msg?: string } }
     {
       const r0 = await parseImageJson(json as { data?: ImageItem[]; results?: ImageItem[] }, usedModel)
       if (r0.newImageBase64) return r0
     }
+    const errText = extractErrorMessage(json)
     const id = String((json && (json.id || json.task_id)) || (json && json.data && json.data.id) || '')
     if (id) {
       return await pollDrawResult(id, 'url', usedModel)
     }
+    if (errText) {
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${errText}` }
+    }
+    try {
+      const preview = text.length > 240 ? `${text.slice(0, 240)}...[truncated ${text.length - 240} chars]` : text
+      console.debug('[grsai generateImageFromText] no results and no id', { usedModel, preview })
+    } catch { void 0 }
     return { newImageBase64: null, newImageMimeType: null, textResponse: '图像生成失败：未找到输出' }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
@@ -271,15 +292,23 @@ export async function editImage(
     const ct = resp.headers.get('content-type') || ''
     const text = await resp.text()
     if (!ct.includes('application/json')) throw new Error(`非 JSON 返回 (${ct}) ${text.slice(0,200)}`)
-    const json = JSON.parse(text) as { results?: ImageItem[]; id?: string; task_id?: string; data?: { id?: string; results?: ImageItem[] } }
+    const json = JSON.parse(text) as { code?: number | string; msg?: string; error?: string; results?: ImageItem[]; id?: string; task_id?: string; data?: { id?: string; results?: ImageItem[]; error?: string; failure_reason?: string; msg?: string } }
     {
       const r0 = await parseImageJson(json as { data?: ImageItem[]; results?: ImageItem[] }, usedModel)
       if (r0.newImageBase64) return r0
     }
+    const errText = extractErrorMessage(json)
     const id = String((json && (json.id || json.task_id)) || (json && json.data && json.data.id) || '')
     if (id) {
       return await pollDrawResult(id, 'url', usedModel)
     }
+    if (errText) {
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像编辑失败：${errText}` }
+    }
+    try {
+      const preview = text.length > 240 ? `${text.slice(0, 240)}...[truncated ${text.length - 240} chars]` : text
+      console.debug('[grsai editImage] no results and no id', { usedModel, preview })
+    } catch { void 0 }
     return { newImageBase64: null, newImageMimeType: null, textResponse: '图像编辑失败：未找到输出' }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)

@@ -7,10 +7,12 @@ function openDB(): Promise<IDBDatabase> {
   if (!canUseIndexedDB) throw new Error('IndexedDB not available')
   if (dbPromise) return dbPromise
   dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open('BananaPodDB', 3)
+    const req = indexedDB.open('BananaPodDB', 4)
     req.onupgradeneeded = () => {
       const db = req.result
+      if (db.objectStoreNames.contains('history')) db.deleteObjectStore('history')
       if (!db.objectStoreNames.contains('images')) db.createObjectStore('images', { keyPath: 'hash' })
+      if (!db.objectStoreNames.contains('lastSession')) db.createObjectStore('lastSession')
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
