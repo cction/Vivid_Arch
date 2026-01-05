@@ -80,3 +80,19 @@
 - 数据提取稳健性：优先使用 `dataTransfer.items` 获取 `File`，无则回退 `dataTransfer.files`；仅当无文件时解析 `text/uri-list/text/plain`。
 - 并发与内存控制：按 `navigator.hardwareConcurrency` 计算并发；当总字节超过 200MB 时降为 1，避免大图批量拖入导致内存峰值过高。
 - 预览布局防重叠：在拖拽预览与批量导入布局中计算现有元素边界，尝试网格偏移避免重叠（dragover 尝试 60 次，导入尝试 200 次），确保矩阵预览与最终位置不冲突。
+
+## 图层合并与栅格化（Canvas/SVG）经验
+
+- **模块化设计**：复杂的栅格化逻辑应从 UI 组件或 Hook 中抽离为独立纯函数（如 `src/features/layerMerge`），便于测试与维护，避免与 React 渲染生命周期强耦合。
+- **描边粗细一致性（Zoom）**：
+  - 画布渲染通常会对矢量元素使用 `strokeWidth / zoom` 以保持屏幕像素恒定。
+  - 合并栅格化（生成 SVG）时，必须同样传入 `zoom` 参数并对 `stroke-width` 应用除以 `zoom` 的计算，否则合并后的图片描边会因缩放倍率不同而变细或变粗。
+- **SVG 图片加载限制**：
+  - SVG 作为 Data URI（`data:image/svg+xml;base64,...`）加载到 `<img>` 或 Canvas 时，浏览器会阻止其加载外部资源（包括 Blob URL 和跨域 URL）。
+  - **解决方案**：在生成 SVG 字符串前，必须预先将所有引用的图片资源（`href`）异步 fetch 并转为 Base64 Data URL，确保 SVG 内容完全自包含。
+- **ClipPath 坐标系**：
+  - 图片合并常涉及圆角裁切（`<clipPath>`）。
+  - 合并计算出的 `minX/minY` 会作为 SVG 的偏移量（`offsetX = -minX`）。
+  - `<clipPath>` 内的 `<rect>` 坐标必须加上此偏移量（`x + offsetX`），否则裁切区域会错位，导致图片看似“合并后消失”。
+- **错误处理**：图片加载与 Canvas 绘图是异步且易出错的（如跨域、解码失败），应在 `onerror` 回调中捕获详细错误并 reject，避免静默失败导致用户困惑。
+

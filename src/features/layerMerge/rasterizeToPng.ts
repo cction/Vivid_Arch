@@ -1,9 +1,6 @@
 import type { Element, ImageElement } from '@/types';
 import { getElementBounds, computeImageClip } from '@/utils/canvas';
 
-import type { Element, ImageElement } from '@/types';
-import { getElementBounds, computeImageClip } from '@/utils/canvas';
-
 const fetchImageAsDataUrl = async (url: string): Promise<string> => {
     if (url.startsWith('data:')) return url;
     try {

@@ -23,7 +23,7 @@ const FLASH_1K_SIZES = {
   '21:9': { w: 1536, h: 672 }
 }
 function getPlaceholderSize(model, size, aspectRatio) {
-  const isProModel = model === 'nano-banana-pro' || model === 'nano-banana-2'
+  const isProModel = model === 'nano-banana-pro' || model === 'nano-banana-pro-cl' || model === 'nano-banana-2'
   const ar = aspectRatio || '1:1'
   const base = isProModel ? (PRO_1K_SIZES[ar] || PRO_1K_SIZES['1:1']) : (FLASH_1K_SIZES[ar] || FLASH_1K_SIZES['1:1'])
   const effectiveSize = isProModel ? size : '1K'
@@ -31,7 +31,7 @@ function getPlaceholderSize(model, size, aspectRatio) {
   return { width: base.w * multiplier, height: base.h * multiplier }
 }
 async function main() {
-  const models = ['nano-banana', 'nano-banana-2', 'nano-banana-pro']
+  const models = ['nano-banana', 'nano-banana-2', 'nano-banana-pro', 'nano-banana-pro-cl']
   const sizes = ['1K', '2K', '4K']
   const ars = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9', undefined, 'invalid']
   const cases = []
@@ -46,8 +46,8 @@ async function main() {
   for (const c of cases) {
     const r = getPlaceholderSize(c.model, c.size, c.ar)
     const ar = (c.ar && (PRO_1K_SIZES[c.ar] || FLASH_1K_SIZES[c.ar])) ? c.ar : '1:1'
-    const base = c.model === 'nano-banana-pro' || c.model === 'nano-banana-2' ? PRO_1K_SIZES[ar] : FLASH_1K_SIZES[ar]
-    const eff = (c.model === 'nano-banana-pro' || c.model === 'nano-banana-2') ? c.size : '1K'
+    const base = (c.model === 'nano-banana-pro' || c.model === 'nano-banana-pro-cl' || c.model === 'nano-banana-2') ? PRO_1K_SIZES[ar] : FLASH_1K_SIZES[ar]
+    const eff = (c.model === 'nano-banana-pro' || c.model === 'nano-banana-pro-cl' || c.model === 'nano-banana-2') ? c.size : '1K'
     const mul = eff === '4K' ? 4 : eff === '2K' ? 2 : 1
     const ew = base.w * mul
     const eh = base.h * mul

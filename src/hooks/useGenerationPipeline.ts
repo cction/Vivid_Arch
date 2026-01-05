@@ -54,7 +54,8 @@ const FLASH_1K_SIZES: Record<string, { w: number; h: number }> = {
 }
 
 function getPlaceholderSize(model: string, size: '1K' | '2K' | '4K', aspectRatio: string | undefined): { width: number; height: number } {
-  const isProModel = model === 'nano-banana-pro' || model === 'nano-banana-2'
+  const lower = (model || '').toLowerCase()
+  const isProModel = lower === 'nano-banana-pro' || lower === 'nano-banana-pro-cl' || lower === 'nano-banana-2'
   const ar = aspectRatio || '1:1'
   const base = isProModel ? (PRO_1K_SIZES[ar] || PRO_1K_SIZES['1:1']) : (FLASH_1K_SIZES[ar] || FLASH_1K_SIZES['1:1'])
   const effectiveSize: '1K' | '2K' | '4K' = isProModel ? size : '1K'
@@ -342,7 +343,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
         })
         const imagesToProcess = await Promise.all(imagePromises)
         const result = apiProvider === 'Grsai'
-          ? await editImageGrsai(prompt, imagesToProcess, { imageSize, model: (imageModel as 'nano-banana-fast' | 'nano-banana-pro') })
+          ? await editImageGrsai(prompt, imagesToProcess, { imageSize, model: (imageModel as 'nano-banana-fast' | 'nano-banana-pro-cl') })
           : await editImageWhatai(prompt, imagesToProcess, { imageSize, model: imageModel })
         {
           const dbg = typeof window !== 'undefined' ? (localStorage.getItem('debug.gen.fail') || '') : ''
@@ -431,7 +432,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
         }
 
         const result = apiProvider === 'Grsai'
-          ? await generateImageFromTextGrsai(prompt, (imageModel as 'nano-banana-fast' | 'nano-banana-pro') || undefined, { aspectRatio, imageSize })
+          ? await generateImageFromTextGrsai(prompt, (imageModel as 'nano-banana-fast' | 'nano-banana-pro-cl') || undefined, { aspectRatio, imageSize })
           : await generateImageFromTextWhatai(prompt, imageModel || undefined, { aspectRatio, imageSize })
         {
           const dbg = typeof window !== 'undefined' ? (localStorage.getItem('debug.gen.fail') || '') : ''

@@ -243,14 +243,14 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     const MODELS = apiProvider === 'Grsai'
         ? [
             { id: 'nano-banana-fast', label: 'Standard_B', short: 'Std_B' },
-            { id: 'nano-banana-pro', label: 'Professional_B', short: 'Pro_B' },
+            { id: 'nano-banana-pro-cl', label: 'Professional_B', short: 'Pro_B' },
           ]
         : [
             { id: 'nano-banana', label: 'Standard_A', short: 'Std_A' },
             { id: 'nano-banana-2', label: 'Professional_A', short: 'Pro_A' },
           ];
     const activeModelLabel = MODELS.find(m => m.id === activeImageModel)?.label || activeImageModel || 'Model';
-    const sizeAllowed = activeImageModel === 'nano-banana-pro' || activeImageModel === 'nano-banana-2';
+    const sizeAllowed = activeImageModel === 'nano-banana-2' || activeImageModel === 'nano-banana-pro' || activeImageModel === 'nano-banana-pro-cl';
     const effectiveSize = sizeAllowed ? imageSize : '1K';
     const sizeDisabled = !sizeAllowed;
 

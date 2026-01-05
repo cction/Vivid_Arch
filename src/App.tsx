@@ -120,11 +120,12 @@ const App: React.FC = () => {
     }, [apiProvider]);
 
     const getAllowedImageModels = (provider: 'WHATAI' | 'Grsai') => {
-        return provider === 'Grsai' ? ['nano-banana-fast', 'nano-banana-pro'] : ['nano-banana', 'nano-banana-2'];
+        return provider === 'Grsai' ? ['nano-banana-fast', 'nano-banana-pro-cl'] : ['nano-banana', 'nano-banana-2'];
     };
     const normalizeImageModelForProvider = (provider: 'WHATAI' | 'Grsai', model: string | null | undefined) => {
         const allowed = getAllowedImageModels(provider);
-        const v = model || '';
+        let v = model || '';
+        if (provider === 'Grsai' && v === 'nano-banana-pro') v = 'nano-banana-pro-cl';
         return allowed.includes(v) ? v : allowed[0];
     };
 
@@ -154,7 +155,8 @@ const App: React.FC = () => {
             const provider = grsaiApiKey ? 'Grsai' : ((localStorage.getItem('API_PROVIDER') as 'WHATAI' | 'Grsai') || 'WHATAI')
             if (provider === 'Grsai') {
                 const m = localStorage.getItem('GRSAI_IMAGE_MODEL');
-                if (m === 'nano-banana-fast' || m === 'nano-banana-pro') return m;
+                if (m === 'nano-banana-fast' || m === 'nano-banana-pro-cl') return m;
+                if (m === 'nano-banana-pro') return 'nano-banana-pro-cl';
                 if (m === 'nano-banana') return 'nano-banana-fast';
                 return 'nano-banana-fast';
             }
@@ -191,7 +193,7 @@ const App: React.FC = () => {
     }, [apiProvider]);
     useEffect(() => {
         const lower = (imageModel || '').toLowerCase();
-        const supportsSize = lower === 'nano-banana-pro' || lower === 'nano-banana-2';
+        const supportsSize = lower === 'nano-banana-2' || lower === 'nano-banana-pro' || lower === 'nano-banana-pro-cl';
         if (!supportsSize) setImageSize('1K');
     }, [imageModel]);
 

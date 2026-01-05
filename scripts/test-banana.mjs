@@ -66,7 +66,7 @@ const FLASH_1K_SIZES = {
   '21:9': { w: 1536, h: 672 }
 }
 function expectedDims(model, size, ar) {
-  const isPro = model === 'nano-banana-2' || model === 'nano-banana-pro';
+  const isPro = model === 'nano-banana-2' || model === 'nano-banana-pro' || model === 'nano-banana-pro-cl';
   const base = isPro ? (PRO_1K_SIZES[ar] || PRO_1K_SIZES['1:1']) : (FLASH_1K_SIZES[ar] || FLASH_1K_SIZES['1:1']);
   const eff = isPro ? size : '1K';
   const mul = eff === '4K' ? 4 : eff === '2K' ? 2 : 1;
