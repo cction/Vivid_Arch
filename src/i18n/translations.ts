@@ -31,7 +31,7 @@ const QUICK_PROMPTS_EN = [
     { name: 'Expression Reference', value: 'Change the person\'s expression to match the new image' },
 ];
 
-const QUICK_PROMPTS_ZHO = [
+const QUICK_PROMPTS_ZH = [
     { name: '图片变手办', value: '将这张照片变成一个人物手办。在它后面，放置一个印有角色形象的盒子，以及一台屏幕上显示着Blender建模过程的电脑。在盒子前面，加一个圆形的塑料底座，上面站着角色手办。如果可能的话，将场景设置在室内' },
     { name: '改变人物视角', value: '将相机角度改为高角度自拍视角，俯视女性，同时保留她确切的面部特征、表情和服装，保持相同的客厅室内背景、沙发、自然光以及整体的摄影构图和风格。' },
     { name: '建筑变模型', value: '将这张照片转换成一个建筑模型。模型后面应该有一个纸板箱，上面印有照片中建筑的图片。还应该有一台电脑，电脑屏幕上显示着该模型的Blender建模过程。在纸板箱前面，放置一张卡纸，并把照片中的建筑模型放在上面。我希望PVC材质能清晰呈现。如果背景是室内的就更好了。' },
@@ -73,7 +73,7 @@ const BANANA_CARDS_EN: { name: string; value: string }[] = [
   { name: 'Snowy', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Snowy: snow-covered ground, cool tones, soft light, serene atmosphere.' },
 ];
 
-const BANANA_CARDS_ZHO: { name: string; value: string }[] = [
+const BANANA_CARDS_ZH: { name: string; value: string }[] = [
   { name: '晴天', value: '保持画面主体和结构不变，将天气氛围改为晴天：明亮温暖的阳光、湛蓝天空、清晰利落的阴影。' },
   { name: '清晨', value: '保持画面主体和结构不变，将天气氛围改为清晨：柔和晨光、黄金时刻、细长而轻柔的阴影、新鲜通透的氛围。' },
   { name: '黄昏', value: '保持画面主体和结构不变，将天气氛围改为黄昏：日落余晖、橙粉色调、对比更柔和、氛围宁静。' },
@@ -275,8 +275,8 @@ export const translations = {
         aspectRatioVertical: '纵向 (9:16)',
     },
     quickPromptsAriaLabel: '选择一个快捷效果',
-    quickPrompts: QUICK_PROMPTS_ZHO,
-    bananaCards: BANANA_CARDS_ZHO,
+    quickPrompts: QUICK_PROMPTS_ZH,
+    bananaCards: BANANA_CARDS_ZH,
     bananaSidebar: {
         presetLabel: '预设',
     },

@@ -59,20 +59,20 @@ const makeSvgDataUrl = (label: string) => {
 // Photo URLs for weather cards (optimized Unsplash sizes)
 const PHOTO_URLS: Record<string, string> = {
   // Chinese
-  '晴天': 'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=360&q=80',
-  '清晨': 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=360&q=80',
-  '黄昏': 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=360&q=80',
+  '晴天': 'https://images.unsplash.com/photo-1652882196700-3c29b23052c6?auto=format&fit=crop&w=360&q=80',
+  '清晨': 'https://images.unsplash.com/photo-1695841090345-39399210e7b6?auto=format&fit=crop&w=360&q=80',
+  '黄昏': 'https://images.unsplash.com/photo-1670813347701-352337009210?auto=format&fit=crop&w=360&q=80',
   '夜景': 'https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=360&q=80',
-  '阴天': 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=360&q=80',
-  '雨天': 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=360&q=80',
+  '阴天': 'https://images.unsplash.com/photo-1760533091926-4f5b8e15c203?auto=format&fit=crop&w=360&q=80',
+  '雨天': 'https://images.unsplash.com/photo-1587413579923-52d36908bf0e?auto=format&fit=crop&w=360&q=80',
   '雪景': 'https://images.unsplash.com/photo-1482192596544-9eb780fc7f66?auto=format&fit=crop&w=360&q=80',
   // English
-  'Sunny': 'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=360&q=80',
-  'Morning': 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=360&q=80',
-  'Dusk': 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=360&q=80',
+  'Sunny': 'https://images.unsplash.com/photo-1652882196700-3c29b23052c6?auto=format&fit=crop&w=360&q=80',
+  'Morning': 'https://images.unsplash.com/photo-1695841090345-39399210e7b6?auto=format&fit=crop&w=360&q=80',
+  'Dusk': 'https://images.unsplash.com/photo-1670813347701-352337009210?auto=format&fit=crop&w=360&q=80',
   'Night Scene': 'https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=360&q=80',
-  'Overcast': 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=360&q=80',
-  'Rainy': 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=360&q=80',
+  'Overcast': 'https://images.unsplash.com/photo-1760533091926-4f5b8e15c203?auto=format&fit=crop&w=360&q=80',
+  'Rainy': 'https://images.unsplash.com/photo-1587413579923-52d36908bf0e?auto=format&fit=crop&w=360&q=80',
   'Snowy': 'https://images.unsplash.com/photo-1482192596544-9eb780fc7f66?auto=format&fit=crop&w=360&q=80',
 };
 
