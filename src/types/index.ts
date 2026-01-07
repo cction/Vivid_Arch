@@ -39,6 +39,7 @@ export interface ImageElement extends CanvasElementBase {
   genTaskId?: string;
   genStatus?: 'creating' | 'generating' | 'retrying' | 'pending' | 'timeout' | 'failed';
   genError?: string;
+  genRetryDisabled?: boolean;
 }
 
 export interface VideoElement extends CanvasElementBase {

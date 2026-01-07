@@ -250,22 +250,44 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
     if (setProgressMessage) setProgressMessage('')
   }, [svgRef, getCanvasPoint, setElements, setSelectedElementIds, setActiveTool, setError, generateId, elementsRef, setIsLoading, setProgressMessage])
 
+  const getDragFlags = (dt: DataTransfer | null) => {
+    const types = Array.from(dt?.types || []).map(t => String(t || '').toLowerCase())
+    const hasFiles = types.includes('files') || types.includes('application/x-moz-file')
+    const hasUriList = types.includes('text/uri-list') || types.includes('public.file-url')
+    const hasPlain = types.includes('text/plain')
+    return { hasFiles, hasUriList, hasPlain }
+  }
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
-    setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))
+    const flags = getDragFlags(e.dataTransfer)
+    if (flags.hasFiles || flags.hasUriList) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+      setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))
+      return
+    }
+    if (flags.hasPlain) {
+      e.preventDefault()
+      return
+    }
   }, [setElements])
   const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
+    const flags = getDragFlags(e.dataTransfer)
+    if (!flags.hasFiles && !flags.hasUriList && !flags.hasPlain) return
+    if (flags.hasFiles || flags.hasUriList) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
     try {
       const targ = e.target
       const tn = targ instanceof globalThis.Element ? targ.nodeName : ''
       const isFO = targ instanceof globalThis.Element ? Boolean(targ.closest('foreignObject')) : false
       console.log('[DragImport] drop', tn, isFO)
     } catch { void 0 }
-    setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))
+    if (flags.hasFiles || flags.hasUriList) {
+      setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))
+    }
     const pm = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory
     if (pm) console.log('[DragImport] mem before drop', pm)
     const dt = e.dataTransfer
@@ -285,7 +307,14 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
     } else {
       const dtAny = dt as unknown as { getData?: (t: string) => string }
       const raw = dtAny && typeof dtAny.getData === 'function' ? (dtAny.getData('text/uri-list') || dtAny.getData('text/plain')) : ''
-      const url = (raw || '').trim()
+      const url = (raw || '')
+        .split('\n')
+        .map(s => s.trim())
+        .find(s => s && !s.startsWith('#')) || ''
+      if (url && /^https?:\/\//i.test(url) && !(flags.hasFiles || flags.hasUriList)) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
       if (url && /^https?:\/\/.*\.(png|jpe?g|gif|webp|bmp|tiff)(\?.*)?$/i.test(url)) {
         fetch(url)
           .then(r => r.blob())
@@ -315,6 +344,8 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
   }, [getCanvasPoint, handleAddImageElements, setElements])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
+    const flags = getDragFlags(e.dataTransfer)
+    if (!(flags.hasFiles || flags.hasUriList)) return
     e.preventDefault()
     e.stopPropagation()
     setElements(prev => prev.filter(el => !(el.type === 'image' && el.name === '[DragPreview]')))

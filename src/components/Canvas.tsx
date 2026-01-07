@@ -99,8 +99,6 @@ export const Canvas: React.FC<CanvasProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onContextMenu={handleContextMenu}
-        onDragOverCapture={(e) => { e.preventDefault(); if ((e as React.DragEvent).dataTransfer) (e as React.DragEvent).dataTransfer.dropEffect = 'copy'; }}
-        onDropCapture={(e) => { e.preventDefault(); }}
         onDragEnter={onDragEnter}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
@@ -208,7 +206,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
             if (isPh) {
               const genStatus = imgEl.genStatus;
-              const isFailed = genStatus === 'failed' || genStatus === 'timeout';
+              const isFailed = genStatus === 'failed' || genStatus === 'timeout' || genStatus === 'pending';
               const showFailureOverlay = isFailed && !showSpinner;
 
               if (showFailureOverlay) {
@@ -253,8 +251,8 @@ export const Canvas: React.FC<CanvasProps> = ({
                         boxShadow: '0 12px 30px rgba(0, 0, 0, 0.45)',
                       }}
                     >
-                      <div style={{ marginBottom: 4, fontWeight: 600, color: '#FCA5A5' }}>
-                        {genStatus === 'timeout' ? '生成超时' : '生成失败'}
+                      <div style={{ marginBottom: 4, fontWeight: 600, color: genStatus === 'pending' ? '#FDE68A' : '#FCA5A5' }}>
+                        {genStatus === 'pending' ? '仍在生成中' : genStatus === 'timeout' ? '生成超时' : '生成失败'}
                       </div>
                       <div
                         style={{
@@ -271,7 +269,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                       >
                         {imgEl.genError || '未知错误'}
                       </div>
-                      {imgEl.genProvider === 'Grsai' && imgEl.genTaskId && (
+                      {imgEl.genProvider === 'Grsai' && imgEl.genTaskId && imgEl.genRetryDisabled !== true && (
                         <>
                           <div
                             style={{
@@ -358,64 +356,6 @@ export const Canvas: React.FC<CanvasProps> = ({
                         <rect x="-40" y="0" width="80" height="24" rx="12" fill="#171717" fillOpacity="0.9" stroke="white" strokeOpacity="0.1" strokeWidth="1" />
                         <text x="0" y="16" textAnchor="middle" fill="white" fillOpacity="0.9" fontSize="11" fontWeight="500" style={{ pointerEvents: 'none', userSelect: 'none', fontFamily: 'system-ui, -apple-system, sans-serif' }}>Generating...</text>
                       </g>
-                    </g>
-                  )}
-                  {showFailureOverlay && (
-                    <g transform={`translate(${el.x + el.width / 2}, ${el.y + el.height / 2}) scale(${1 / z})`}>
-                      <foreignObject x="-90" y="-70" width="180" height="140" style={{ pointerEvents: 'none' }}>
-                        <div style={{
-                          width: '100%',
-                          height: '100%',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '12px',
-                          boxSizing: 'border-box',
-                          color: '#EF4444',
-                          fontSize: '12px',
-                          textAlign: 'center',
-                          backgroundColor: 'rgba(50, 35, 90, 0.8)',
-                          borderRadius: '12px',
-                          border: '1px solid rgba(197, 174, 246, 0.2)',
-                          backdropFilter: 'blur(12px)'
-                        }}>
-                          <div style={{ marginBottom: 4, fontWeight: 600 }}>
-                            {genStatus === 'timeout' ? '生成超时' : '生成失败'}
-                          </div>
-                          <div style={{ marginBottom: 8, opacity: 0.8, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.2' }}>
-                            {imgEl.genError || '未知错误'}
-                          </div>
-                          {imgEl.genProvider === 'Grsai' && imgEl.genTaskId && (
-                            <>
-                              <div style={{ marginBottom: 8, fontFamily: 'monospace', fontSize: '10px', opacity: 0.6 }}>
-                                ID: {imgEl.genTaskId.slice(0, 8)}...
-                              </div>
-                              <button
-                                style={{
-                                  pointerEvents: 'auto',
-                                  padding: '6px 16px',
-                                  backgroundColor: 'var(--brand-primary, #3B82F6)',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  fontSize: '11px',
-                                  cursor: 'pointer',
-                                  marginTop: '2px',
-                                  whiteSpace: 'nowrap'
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  if (onRetryGenerate) onRetryGenerate(imgEl.id);
-                                }}
-                              >
-                                重新获取
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </foreignObject>
                     </g>
                   )}
                   {selectionComponent}

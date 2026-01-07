@@ -200,7 +200,17 @@ const App: React.FC = () => {
     }, [imageModel]);
 
     useEffect(() => {
-        const prevent = (e: DragEvent) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; try { const node = e.target instanceof Element ? e.target.nodeName : ''; console.log('[GlobalDND]', e.type, node); } catch { void 0; } };
+        const isExternalDrag = (dt: DataTransfer | null): boolean => {
+            if (!dt) return false;
+            const types = Array.from(dt.types || []).map(t => String(t || '').toLowerCase());
+            return types.includes('files') || types.includes('text/uri-list') || types.includes('application/x-moz-file') || types.includes('public.file-url');
+        };
+        const prevent = (e: DragEvent) => {
+            if (!isExternalDrag(e.dataTransfer)) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+            try { const node = e.target instanceof Element ? e.target.nodeName : ''; console.log('[GlobalDND]', e.type, node); } catch { void 0; }
+        };
         document.addEventListener('dragenter', prevent, { capture: true });
         document.addEventListener('dragover', prevent, { capture: true });
         document.addEventListener('dragleave', prevent, { capture: true });
@@ -349,16 +359,21 @@ const App: React.FC = () => {
     const handleRetryGenerate = async (elementId: string) => {
         const el = elementsRef.current.find(e => e.id === elementId);
         if (!el || el.type !== 'image' || !el.genTaskId || el.genProvider !== 'Grsai') return;
+        if (el.genRetryDisabled === true) return;
+        if (el.isGenerating === true || el.genStatus === 'retrying') return;
 
         commitAction(prev => prev.map(e => {
             if (e.id === elementId) {
-                return { ...e, genStatus: 'pending', genError: undefined } as ImageElement;
+                return { ...e, genStatus: 'retrying', genError: undefined, isGenerating: true } as ImageElement;
             }
             return e;
         }));
 
         try {
             const result = await getDrawResultOnce(el.genTaskId);
+            try {
+                console.debug('[GrsaiTask] retry result', { taskId: el.genTaskId, status: result.status, hasImage: Boolean(result.newImageBase64), hasFailureReason: Boolean(result.error) })
+            } catch { void 0 }
             
             if (result.status === 'succeeded' && result.newImageBase64) {
                  try {
@@ -375,16 +390,18 @@ const App: React.FC = () => {
                              base.genError = undefined;
                              base.genTaskId = undefined;
                              base.genProvider = undefined;
-                             base.isGenerating = undefined;
-                             base.isPlaceholder = undefined;
-                             return base;
+                              base.genRetryDisabled = undefined;
+                              base.isGenerating = undefined;
+                              base.isPlaceholder = undefined;
+                              return base;
                          }
                          return e;
                      }));
                  } catch (loadErr) {
+                     const msg = loadErr instanceof Error ? loadErr.message : String(loadErr);
                      commitAction(prev => prev.map(e => {
                          if (e.id === elementId) {
-                             return { ...e, genStatus: 'failed', genError: 'Failed to load generated image' } as ImageElement;
+                             return { ...e, genStatus: 'failed', genError: `Failed to load generated image: ${msg}`, isGenerating: undefined } as ImageElement;
                          }
                          return e;
                      }));
@@ -394,11 +411,19 @@ const App: React.FC = () => {
                     if (e.id === elementId) {
                         const base = { ...e } as ImageElement;
                         if (result.status === 'failed') {
+                            const errText = (result.error || result.textResponse || '').trim();
                             base.genStatus = 'failed';
-                            base.genError = result.error || result.textResponse || 'Unknown error';
+                            base.genError = errText || '生成失败（服务返回 failed）';
+                            const isExplicitServerFailed = (result.textResponse || '').startsWith('图像生成失败：')
+                            base.genRetryDisabled = isExplicitServerFailed ? true : undefined;
+                            base.isGenerating = undefined;
                         } else {
-                            base.genStatus = result.status as 'timeout' | 'pending';
-                            if (result.error) base.genError = result.error;
+                            base.genStatus = (result.status === 'timeout' ? 'timeout' : 'pending');
+                            base.genRetryDisabled = undefined;
+                            base.isGenerating = undefined;
+                            const infoText = (result.error || result.textResponse || '').trim();
+                            if (infoText) base.genError = infoText;
+                            else base.genError = (result.status === 'timeout') ? '获取结果超时' : '仍在生成中，请稍后重试';
                         }
                         return base;
                     }
@@ -410,7 +435,7 @@ const App: React.FC = () => {
              const msg = err instanceof Error ? err.message : String(err);
              commitAction(prev => prev.map(e => {
                 if (e.id === elementId) {
-                    return { ...e, genStatus: 'failed', genError: msg } as ImageElement;
+                    return { ...e, genStatus: 'failed', genError: msg, isGenerating: undefined } as ImageElement;
                 }
                 return e;
             }));
@@ -472,7 +497,7 @@ const App: React.FC = () => {
     }, [elementsRef, svgRef, updateActiveBoardSilent, isElementVisible]);
 
     return (
-        <div className="w-screen h-screen flex flex-col font-sans podui-theme" onDragOverCapture={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; }} onDropCapture={(e) => { e.preventDefault(); }} onDragEnter={handleDragOver} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+        <div className="w-screen h-screen flex flex-col font-sans podui-theme" onDragEnter={handleDragOver} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
             {isLoading && <Loader progressMessage={progressMessage} />}
             <ErrorToast error={error} onClose={() => setError(null)} />
             <BoardPanel
@@ -553,10 +578,6 @@ const App: React.FC = () => {
                     handleMouseMove={handleMouseMove}
                     handleMouseUp={handleMouseUp}
                     handleContextMenu={handleContextMenu}
-                    onDragEnter={handleDragOver}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
                     lassoPath={lassoPath}
                     alignmentGuides={alignmentGuides}
                     getSelectionBounds={getSelectionBounds}

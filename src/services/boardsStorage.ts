@@ -117,6 +117,7 @@ async function slimElement(el: Element): Promise<Element> {
       genTaskId: img.genTaskId,
       genStatus: img.genStatus,
       genError: img.genError,
+      genRetryDisabled: img.genRetryDisabled,
     }
     return next
   }
