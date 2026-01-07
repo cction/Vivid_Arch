@@ -7,6 +7,8 @@ interface BananaSidebarProps {
   language: 'en' | 'ZH';
   setPrompt: (prompt: string) => void;
   onGenerate: () => void;
+  // If provided, overrides the default menu behavior and triggers this callback instead
+  onTrigger?: () => void;
   disabled?: boolean;
   promptBarOffsetPx?: number;
   buttonSize?: number;
@@ -132,7 +134,15 @@ const getCardImageSrc = (label: string) => {
 // Local icon fallback mapping (runtime image error handler will use this)
 const getLocalIconSrc = (label: string): string | null => resolveIconUrl(label);
 
-export const BananaSidebar: React.FC<BananaSidebarProps> = ({ language, setPrompt, onGenerate, disabled = false, promptBarOffsetPx = 0, buttonSize }) => {
+export const BananaSidebar: React.FC<BananaSidebarProps> = ({
+  language,
+  setPrompt,
+  onGenerate,
+  onTrigger,
+  disabled = false,
+  promptBarOffsetPx = 0,
+  buttonSize
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -171,6 +181,10 @@ export const BananaSidebar: React.FC<BananaSidebarProps> = ({ language, setPromp
         ref={buttonRef}
         onClick={(e) => {
           if (disabled) return;
+          if (onTrigger) {
+            onTrigger();
+            return;
+          }
           setIsOpen(prev => !prev);
           const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
           setAnchor({ left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width) });

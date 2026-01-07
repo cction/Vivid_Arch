@@ -11,6 +11,7 @@
 - 更新说明（面向用户）：按 `CHANGELOG_GUIDELINES.md` 规范自动生成并写入 `CHANGELOG.md` 顶部版本块。
 - 项目描述一致性：所有“对外展示版本号”的文件必须与最新版本一致（至少包含 `package.json`、`README.md`、`metadata.json`）。
 - Git 交付：生成一次 commit + 一个 annotated tag（tag = `vX.Y.Z`），提交信息/Tag 信息为中文更新要点。
+- Dist 产物：备份上一版 `dist`（命名 `dist-x.y.z`）并构建生成最新 `dist`。
 - 可选远程推送：必须显式确认后才推送；推送后同步“简介”文案为最新状态（无自动工具时给出可复制文案与手动步骤）。
 - 调试可观测：输出必须包含关键调试信息（版本、替换命中次数、Git 命令结果/错误码、生成的 commit/tag）。
 
@@ -30,6 +31,8 @@
 ### 必改文件（发布时必须对齐）
 - `f:\Trae\BananaArch-main\package.json`
   - `version`: `x.y.z`
+- `f:\Trae\BananaArch-main\package-lock.json`
+  - 根级与 `packages[""]` 中的 `version`: `x.y.z`
 - `f:\Trae\BananaArch-main\CHANGELOG.md`
   - 顶部新增：`## vX.Y.Z (YYYY-MM-DD)` + 2–5 条要点
 - `f:\Trae\BananaArch-main\README.md`
@@ -43,6 +46,12 @@
 - `f:\Trae\BananaArch-main\src\config\updateFeed.json`
   - 由 `scripts/generateUpdateFeed.mjs` 从 `CHANGELOG.md` 自动生成（项目已在 `predev/prebuild` 执行）
   - 发布前建议确保该文件已更新并纳入提交（它会影响设置面板“最近更新”展示）
+
+### 构建产物（推荐纳入发布步骤）
+- `dist/`（Vite 生产构建产物）
+  - 发布时必须重新构建生成最新 `dist`
+  - 同时将上一版 `dist` 备份为 `dist-x.y.z`
+  - 为避免备份产物进入 Git 提交：备份目录建议放在 `release/dist-x.y.z/`（`release/` 已被 gitignore 忽略）
 
 ---
 
@@ -142,11 +151,24 @@
 输出调试信息（必须打印）：
 - 每个文件：命中次数、变更后的关键行（截断展示）
 
-### 步骤 5：生成 updateFeed.json（确保 UI 最近更新一致）
+### 步骤 5：备份上一版 dist，并生成最新 dist（必须）
+- 备份目录命名规则：`dist-${cur}`（例如 `dist-1.3.2`）
+- 推荐备份位置：`release/dist-${cur}`（避免进入 Git 提交）
+- 备份流程（Windows PowerShell 示意）：
+  - 若 `dist/` 不存在：打印 `[DistBackup] dist not found, skip`
+  - 若存在：将 `dist/` 复制到 `release/dist-${cur}/`（建议先删除同名旧备份目录）
+  - 打印调试信息：`cur/next`、备份目录路径、复制结果（文件数/大小可选）
+  - 最多保留3个版本备份，多余的备份从最老的版本开始清除
+- 构建生成最新 `dist/`：
+  - 执行 `npm run build`
+  - 校验 `dist/index.html` 存在
+  - 打印调试信息：构建退出码、产物关键文件列表（截断展示）
+
+### 步骤 6：生成 updateFeed.json（确保 UI 最近更新一致）
 - 执行 `node scripts/generateUpdateFeed.mjs`
 - 确认 `src/config/updateFeed.json` 顶部版本是 `v${next}`
 
-### 步骤 6：质量与安全校验（必须）
+### 步骤 7：质量与安全校验（必须）
 至少执行：
 - `npm run lint`
 - `npx tsc --noEmit`
@@ -156,7 +178,7 @@
 
 说明：是否继续发布由执行者判断，但 audit 结果必须记录（终端输出保留）。
 
-### 步骤 7：Git 提交与打 Tag（annotated）
+### 步骤 8：Git 提交与打 Tag（annotated）
 - `git add -A`（全量加入：新增/修改/删除文件全部纳入）
 - `git commit`
   - subject：`chore(release): vX.Y.Z`
@@ -174,7 +196,7 @@
  - tag 指向校验：
    - `git show -s --format="%h %s" vX.Y.Z`
 
-### 步骤 8：可选远程推送（显式确认）
+### 步骤 9：可选远程推送（显式确认）
 - 默认不推送
 - 仅在明确确认（或提供 `--push`）后执行：
   - 推送分支：
@@ -185,7 +207,7 @@
     - 再推送本地 tag：
       - `git push origin vX.Y.Z`
 
-### 步骤 9：推送后简介同步（不依赖额外工具）
+### 步骤 10：推送后简介同步（不依赖额外工具）
 - 简介来源优先级：
   1) `metadata.json.description`
   2) README 首段摘要
@@ -201,6 +223,7 @@
 在仓库根目录执行：
 
 ```bat
+npm run build
 npm run lint
 npx tsc --noEmit
 node scripts/generateUpdateFeed.mjs
@@ -244,6 +267,7 @@ git push origin vX.Y.Z
 
 ## 8. 成功验收（发布完成必须满足）
 - `package.json.version == next`
+- `package-lock.json` 顶部与 `packages[""]` 中的 `version == next`
 - `CHANGELOG.md` 顶部是 `## vnext (date)`，且 2–5 条要点符合规范
 - `README.md` 标题版本、当前版本、核心更新标题与 `next` 一致
 - `metadata.json.name` 中版本一致

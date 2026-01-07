@@ -48,9 +48,9 @@ export const CanvasSettings: React.FC<CanvasSettingsProps> = ({
 
     if (!isOpen) return null;
 
-    return (
+        return (
         <div
-            className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-[20000] flex items-center justify-center bg-black/50 backdrop-blur-sm"
             onClick={onClose}
         >
             <Panel className="relative flex flex-col w-[720px] max-w-[95vw] max-h-[85vh] overflow-hidden shadow-2xl">

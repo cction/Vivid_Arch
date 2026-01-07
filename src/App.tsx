@@ -9,6 +9,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useBoardManager } from '@/hooks/useBoardManager';
 import { useTextEditing } from '@/hooks/useTextEditing';
 import { PromptBar } from '@/features/prompt/PromptBar';
+import { BananaWorkspaceDialog } from '@/features/workspace/BananaWorkspaceDialog';
 import { Loader } from '@/ui/Loader';
 import { CanvasSettings } from '@/features/settings/CanvasSettings';
 import { LayerPanel } from '@/features/boards/LayerPanel';
@@ -102,6 +103,7 @@ const App: React.FC = () => {
     // 初始化编辑逻辑在 useTextEditing（稍后基于 commitAction/setElements 注入）
     const [lassoPath, setLassoPath] = useState<Point[] | null>(null);
     const [showUIPreview, setShowUIPreview] = useState(false);
+    const [isBananaWorkspaceOpen, setIsBananaWorkspaceOpen] = useState(false);
 
     const { language, setLanguage, t } = useI18n('ZH');
     const { apiKey, setApiKey, grsaiApiKey, setGrsaiApiKey, isKeyInputLocked } = useCredentials();
@@ -606,7 +608,38 @@ const App: React.FC = () => {
                     onRasterizeSelection={handleRasterizeSelection}
                 />
             </div>
-            <PromptBar
+            {!isBananaWorkspaceOpen && (
+                <PromptBar
+                    t={t}
+                    language={language}
+                    prompt={prompt}
+                    setPrompt={setPrompt}
+                    onGenerate={handleGenerate}
+                    onCancelGenerate={handleCancelGenerate}
+                    isLoading={isLoading}
+                    isSelectionActive={selectedElementIds.length > 0}
+                    selectedElementCount={selectedElementIds.length}
+                    userEffects={userEffects}
+                    onAddUserEffect={addUserEffect}
+                    onDeleteUserEffect={deleteUserEffect}
+                    generationMode={generationMode}
+                    setGenerationMode={setGenerationMode}
+                    videoAspectRatio={videoAspectRatio}
+                    setVideoAspectRatio={setVideoAspectRatio}
+                    activeImageModel={imageModel}
+                    imageSize={imageSize}
+                    setImageSize={setImageSize}
+                    imageAspectRatio={imageAspectRatio}
+                    setImageAspectRatio={setImageAspectRatio}
+                    setImageModel={setImageModel}
+                    apiProvider={apiProvider}
+                    onBananaClick={() => setIsBananaWorkspaceOpen(true)}
+                />
+            )}
+            
+            <BananaWorkspaceDialog
+                open={isBananaWorkspaceOpen}
+                onClose={() => setIsBananaWorkspaceOpen(false)}
                 t={t}
                 language={language}
                 prompt={prompt}
@@ -631,7 +664,7 @@ const App: React.FC = () => {
                 setImageModel={setImageModel}
                 apiProvider={apiProvider}
             />
-            
+
             {showUIPreview && <PodUIPreview onClose={() => setShowUIPreview(false)} />}
             
             <BottomBar 

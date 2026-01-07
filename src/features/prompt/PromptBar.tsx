@@ -6,7 +6,7 @@ import { BananaSidebar } from '@/features/sidebar/BananaSidebar';
 import { IconButton, Textarea } from '../../ui';
 import type { UserEffect, GenerationMode } from '@/types';
 
-interface PromptBarProps {
+export interface PromptBarProps {
     t: (key: string, ...args: unknown[]) => string;
     language: 'en' | 'ZH';
     prompt: string;
@@ -31,6 +31,12 @@ interface PromptBarProps {
     setImageAspectRatio: (ratio: string) => void;
     setImageModel: (model: string) => void;
     apiProvider: 'WHATAI' | 'Grsai';
+    onBananaClick?: () => void;
+    mode?: 'floating' | 'static';
+    className?: string;
+    forceExpanded?: boolean;
+    noBorderRadius?: boolean;
+    noBorder?: boolean;
 }
 
 function readTokenPx(name: string, fallback: number) {
@@ -87,11 +93,25 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     setImageAspectRatio,
     setImageModel,
     apiProvider,
-    onCancelGenerate
+    onCancelGenerate,
+    onBananaClick,
+    mode,
+    forceExpanded,
+    className,
+    noBorderRadius,
+    noBorder
 }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(forceExpanded || false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+
+    const handleGenerateClick = () => {
+        if (isLoading) {
+            onCancelGenerate();
+        } else if (prompt.trim()) {
+            onGenerate();
+        }
+    };
     const [isRatioMenuOpen, setIsRatioMenuOpen] = useState(false);
     const [modelMenuAnchor, setModelMenuAnchor] = useState<{ left: number; top: number; width: number } | null>(null);
     const [ratioMenuAnchor, setRatioMenuAnchor] = useState<{ left: number; top: number; width: number } | null>(null);
@@ -266,24 +286,19 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     const isPromptEmpty = !prompt.trim();
     const isGenerating = isLoading;
 
-    const handleGenerateClick = () => {
-        if (isPromptEmpty) return;
-        if (isGenerating) {
-            onCancelGenerate();
-        } else {
-            onGenerate();
-        }
-    };
+    const containerClasses = mode === 'static'
+        ? `w-full flex justify-center ${className || ''}`
+        : `absolute bottom-6 left-1/2 -translate-x-1/2 z-[100] flex justify-center ${className || ''}`;
 
     return (
-        <div ref={containerRef} className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[100] flex justify-center">
+        <div ref={containerRef} className={containerClasses}>
             <motion.div
                 ref={wrapperRef}
                 initial={false}
                 animate={{
-                    width: isExpanded ? expandedWidth : 180,
+                    width: isExpanded ? (mode === 'static' ? '100%' : expandedWidth) : 180,
                     height: isExpanded ? contentHeight : 56,
-                    borderRadius: isExpanded ? 24 : 999
+                    borderRadius: noBorderRadius ? 0 : (isExpanded ? 24 : 999)
                 }}
                 transition={{
                     borderRadius: isExpanded ? {
@@ -315,7 +330,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                         delay: 0
                     }
                 }}
-                className="relative pod-prompt-bar overflow-hidden"
+                className={`relative overflow-hidden ${noBorder ? '' : 'pod-prompt-bar'}`}
             >
                 <AnimatePresence mode="sync">
                     {!isExpanded ? (
@@ -338,6 +353,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                         disabled={isLoading}
                                         promptBarOffsetPx={0}
                                         buttonSize={40}
+                                        onTrigger={onBananaClick}
                                     />
                                 </div>
                                 <span className="text-neutral-400 text-sm font-medium truncate select-none">
@@ -353,7 +369,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                             animate={{ opacity: 1, transition: { duration: 0.12, delay: 0 } }}
                             exit={{ opacity: 0, transition: { duration: 0.08 } }}
                             className="flex flex-col px-3 pt-1 pb-3 gap-0"
-                            style={{ width: expandedWidth }}
+                            style={{ width: mode === 'static' ? '100%' : expandedWidth }}
                             ref={expandedContentRef}
                         >
                             {/* Body: Input Area */}
@@ -439,6 +455,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                         disabled={isLoading}
                                         promptBarOffsetPx={0}
                                         buttonSize={36}
+                                        onTrigger={onBananaClick}
                                     />
                                 </div>
 
@@ -561,7 +578,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
 
                                     <button
                                         onClick={handleGenerateClick}
-                                        disabled={isPromptEmpty}
+                                        disabled={!isLoading && isPromptEmpty}
                                         className="h-9 w-24 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-black/20 pod-generate-button flex items-center justify-center text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                                         aria-label={isGenerating ? t('promptBar.cancel') : t('promptBar.generate')}
                                         title={isGenerating ? t('promptBar.cancel') : t('promptBar.generate')}

@@ -1,232 +1,149 @@
 # BananaPod 项目状态记录
 
-## 当前阶段：失败提示卡片“重试按钮终止条件”优化（规划中）
+## 新阶段：香蕉按钮工作台界面重设计（规划中）
 
 ### 背景和动机
 
-- 现状：失败提示卡片在“重新获取”后仍可能持续展示重试按钮，即便服务端已经明确返回失败，容易误导用户继续重试无意义操作。
-- 用户目标（体验）：当结果已经明确失败时，卡片只呈现失败原因，不再提供重试入口；当未明确失败且未返回图片时，允许持续重试直到成功出图。
+- 现状：香蕉按钮目前仅弹出小型天气预设卡片菜单，承载能力有限，无法将“提示词生成/收集（外部网页）”与“PromptBar 编辑/生成”形成一体化工作流。
+- 用户目标（体验）：
+  - 点击香蕉按钮后出现一个“尽可能大”的固定尺寸工作台框，左侧为天气预设竖向列表，右侧上方嵌入网页 `https://p.vividai.com.cn/`，右侧下方复用现有 PromptBar（保留全部功能与布局）。
+  - 网页内点击“复制”按钮后，提示词自动填入 PromptBar；提示词较多时按现有 PromptBar 展开逻辑向上展开，挤压网页空间，但整体工作台框大小不变化。
+  - 保持现有 `src/styles` 与 `src/ui` 的 PodUI 风格一致，不影响其它功能模块。
 
 ### 关键挑战和分析
 
-- 现有 `genStatus='failed'` 语义不够细：可能代表“首次失败但仍可重试”，也可能代表“重试后已明确失败应禁止重试”，需要区分以避免误伤现有能力。
-- 服务端返回差异：存在 `status` 明确失败但 `failure_reason` 缺失的情况，需要兜底错误文案，同时保留足够调试信息（taskId/status）。
-- 状态持久化：一旦进入“明确失败不再重试”，刷新后也应保持一致，避免按钮“复活”。
-- 并发点击：用户可能连续点击“重新获取”，需要在一次请求进行中临时禁用按钮，避免并发请求覆盖状态。
+- 跨域 iframe 的交互限制（核心可行性风险）：
+  - 应用无法直接读取/监听 iframe 内部 DOM 或按钮点击（同源策略）。
+  - 仅依赖剪贴板读取实现“自动填入”在浏览器中通常不可行（权限与用户手势限制），且稳定性差。
+- 嵌入限制风险（CSP/X-Frame-Options）：
+  - 目标站点可能通过 `frame-ancestors` 或 `X-Frame-Options` 禁止被 iframe 嵌入，导致右上方“网页区域”无法显示。**必须作为前置验证项（Task 0）**。
+- PromptBar 状态同步与单一数据源（关键体验）：
+  - 工作台内的 PromptBar 与主界面的 PromptBar 必须共享同一份状态（prompt text, attachments）。
+  - **防止数据丢失**：用户在工作台输入内容后误触关闭，内容应保留在主界面 PromptBar 中；反之亦然。这要求将 PromptBar 的状态提升（Lift State Up）至 `App.tsx` 或全局 Context。
+- PromptBar 展开与布局挤压（体验一致性）：
+  - 需要复用现有 PromptBar 的展开/收起与文本框高度控制逻辑，不在工作台中重写，避免回归风险。
+  - 工作台整体尺寸固定，但右上 iframe 区域需随 PromptBar 高度动态缩放且不溢出。
+- 模块化与不影响现有功能：
+  - PromptBar 当前内部持有 `isExpanded` 等 UI 状态；若粗暴外提可能牵涉大量重构。
+  - 必须保证不打开工作台时，原 PromptBar 交互、生成、菜单 portal、画布交互不受影响。
+- 安全与可控：
+  - 外部网页通过消息通信注入提示词属于输入通道，需要严格校验来源与内容长度，避免被其它页面恶意 postMessage 注入。
 
 ### 目标定义（可验收）
 
-- 仅对 `genProvider === 'Grsai'` 的失败提示卡片生效。
-- 点击“重新获取”后：
-  - 若结果 `status` 明确为失败（`failed`）：卡片只显示错误信息，不显示“重新获取”按钮。
-  - 若未明确失败且未返回正确图片（`pending/timeout` 或解析后无图片但也非 `failed`）：始终保留“重新获取”按钮，允许持续点击直到成功出图。
-- 成功出图后：占位符替换为真实图片，清理生成态字段与错误提示。
+- 交互与布局：
+  - 点击香蕉按钮打开工作台；工作台为固定尺寸的大框（不随 PromptBar 展开改变外框尺寸）。
+  - 工作台三分区：
+    - 左：天气预设竖向列表（复用 `bananaCards` 数据），**增加顶部微型搜索框**，允许更紧凑以让出网页视野。
+    - 右上：iframe 显示 `https://p.vividai.com.cn/`（第一优先级区域）。**增加 iframe 加载中（Loading Skeleton）与加载失败的明确反馈 UI**。
+    - 右下：复用现有 PromptBar 的界面与全部功能（长 prompt 时向上展开并挤压 iframe）。
+  - 布局比例（网页优先，默认值可调）：
+    - 外框尺寸：`width: min(96vw, 1440px)`；`height: min(90vh, 860px)`；保持固定，不随内部内容增高而改变。
+    - 左侧预设列：默认 200px；`min 160px / max 240px`；可折叠为 56px（仅图标/缩写），折叠时网页区域获得最大空间。
+    - 右侧列：占剩余宽度；内部上下结构：
+      - iframe 区域：`flex: 1; min-height: 240px; overflow: hidden`，始终优先保留可视高度。
+      - PromptBar 区域：`flex: none`，其自身展开增高时只挤压 iframe，不改变外框尺寸。
+- 状态管理与数据安全：
+  - **单一数据源**：`App.tsx` 持有 `prompt` 和 `setPrompt`，同时传递给主界面和工作台的 PromptBar。
+  - **误操作保护**：关闭工作台（点击遮罩或 ESC）时，不销毁 Prompt 数据，用户可无缝在主界面继续编辑。
+- 联动：
+  - 点击左侧天气预设：PromptBar 自动填入对应提示词并展开（不自动触发生成）。
+  - 网页内复制按钮触发：提示词自动填入 PromptBar 并展开；长文本导致 PromptBar 增高时，挤压右上 iframe 可视区域，但外框尺寸不变。
+- 风格一致与快捷键：
+  - 工作台容器与分区视觉使用 PodUI 既有样式体系。
+  - 支持 **ESC 键关闭工作台**。
+- 不影响其它功能：
+  - 不打开工作台时，原有 PromptBar/画布/图层/设置/生成流程行为完全一致。
 
-### 状态机与数据字段（规划约定）
+### 方案可靠性论证与风险规避
 
-- `ImageElement` 新增可选字段（需可持久化）：
-  - `genRetryDisabled?: boolean`
-- 语义：
-  - `genRetryDisabled === true`：明确失败终态，不再允许“重新获取”按钮出现。
-  - `genRetryDisabled !== true`：允许“重新获取”按钮出现（在 Grsai 且存在 taskId 前提下）。
-- 重试时的临时状态约定：
-  - 点击后将元素置为 `genStatus='retrying'` 且 `isGenerating=true`，用于临时禁用按钮与展示加载态。
-
-### 判定标准（必须明确）
-
-- 明确失败：
-  - `getDrawResultOnce(taskId).status === 'failed'` 且文本提示为服务端失败（例如 `textResponse` 以“图像生成失败：”开头）
-  - 若失败原因缺失：展示兜底文案（如“生成失败（服务返回 failed）”）
-- 明确成功：
-  - `status === 'succeeded'` 且返回结构中包含可用图片信息（例如 `imageUrl/base64` 之一可被成功解析）
-- 非明确失败且无图：
-  - `status === 'pending' || status === 'timeout'` 或返回结构缺少图片但也不是 `failed`
-  - `status === 'failed'` 但属于“查询失败/非 JSON 返回”等非服务端明确失败的情况
-  - 该场景：保留重试按钮，并允许多次重试
-
-### 高层任务拆分（规划者 → 执行者实施顺序）
-
-1. 扩展 `ImageElement` 并接入存储层持久化
-  - 修改 `src/types/index.ts`：为 `ImageElement` 增加 `genRetryDisabled?: boolean`。
-  - 修改 `src/services/boardsStorage.ts`：在瘦身/还原逻辑中保留该字段。
-  - 成功标准：
-    - 刷新页面后，“明确失败”卡片仍不展示重试按钮。
-
-2. 调整重试回调：在“明确失败”时写入终态禁用标记
-  - 修改 `src/App.tsx`（重试处理函数）：
-    - 发起请求前写入：
-      - `genStatus='retrying'`
-      - `isGenerating=true`
-    - 当 `getDrawResultOnce` 返回 `status === 'failed'` 时写入：
-      - `genStatus='failed'`
-      - `genError=...`（优先服务端 failure_reason；缺失时用兜底文案）
-      - `genRetryDisabled=true`
-      - `isGenerating=false`
-    - 当返回 `pending/timeout/无图无失败` 时写入：
-      - `genStatus='pending' | 'timeout'`（与返回对齐）
-      - `genRetryDisabled` 保持 `false/undefined`
-      - `isGenerating=false`
-    - 当返回 `succeeded` 且解析出图片时：
-      - 替换占位符为图片并清理 `gen*` 字段
-  - 成功标准：
-    - “明确失败”后按钮立即消失，仅剩错误信息。
-
-3. 调整 Failure Overlay 展示逻辑：按钮显示条件增加终态判断
-  - 修改 `src/components/Canvas.tsx`：将“重新获取”按钮显示条件调整为：
-    - `genProvider === 'Grsai' && genTaskId && genRetryDisabled !== true`
-  - 成功标准：
-    - 非明确失败（pending/timeout/无图无失败）仍可重试；明确失败不再显示按钮。
-
-4. 回归验证与调试信息（必须可定位）
-  - 手动用例：
-    - 重试返回 failed：按钮不显示，仅显示错误信息。
-    - 重试返回 pending/timeout/无图无失败：按钮一直可点击，直到成功出图。
-    - 重试最终成功：占位符替换为图片并清理错误/禁用标记。
-    - 重试请求进行中：按钮临时不可点击（避免并发），返回后恢复到上述规则。
-  - 命令验证：
-    - `npm run lint`
-    - `npx tsc --noEmit`
-  - 日志要求（不含敏感信息）：
-    - `[GrsaiTask] retry result { taskId, status, hasImage, hasFailureReason }`
-
-### 项目状态看板（失败提示卡片“重试按钮终止条件”优化）
-
-#### 已完成
-
-- [ ] (空)
-
-#### 进行中
-
-- [ ] 规划者：确认“明确失败”判定标准与兜底文案
-
-#### 待办
-
-- [x] 执行者：新增终态禁用字段并持久化
-- [x] 执行者：重试回调写入终态并更新卡片展示
-- [x] 执行者：回归验证并补充调试日志
-
-### 执行者反馈或请求帮助（本阶段约定）
-
-- 进度与验证记录：
-  - 步骤 1 完成：新增 `genRetryDisabled` 字段并在存储瘦身流程中持久化。
-  - 验证：IDE 诊断无新增报错。
-  - 步骤 2/3 完成：重试回调按 `status` 写入终态并发控制；失败卡片在 `pending/timeout/failed` 下保持可见，且在 `genRetryDisabled===true` 时隐藏重试按钮。
-  - 修复：Canvas 失败浮层重复渲染，已移除 SVG 内重复 overlay，仅保留绝对定位 overlay。
-  - 验证：
-    - IDE 诊断：无新增报错。
-    - `npm run lint`：退出码 0。
-    - `npx tsc --noEmit`：退出码 0。
-    - `node scripts/test-placeholder.mjs`：`placeholder-size-tests ok 144`。
-    - 调试日志：已加入 `[GrsaiTask] retry result { taskId, status, hasImage, hasFailureReason }`（不含敏感信息）。
-    - 结构校验脚本（可选）`node scripts/validate-structure.mjs`：当前仓库在 `translations.ts` 与 `components/BoardPanel.tsx` 校验项上失败（与本次改动无关）。
-
-### 当前状态/进度跟踪（失败提示卡片“重试按钮终止条件”优化）
-
-- 规划者：
-  - 状态：已完成方案整理，等待进入执行。
-- 执行者：
-  - 状态：步骤 1-4 已完成，等待规划者确认验收。
-
----
-
-## 下一阶段：拖拽拦截逻辑收敛（规划中）
-
-### 背景和动机
-
-- 现状：当前存在多层拖拽拦截（全局捕获 + 根容器 capture + Canvas SVG capture + 业务 drop 处理），形式上重复，且全局层强制设置 `dropEffect='copy'` 可能干扰应用内“移动类拖拽”（如图层面板重排）。
-- 目标：在不影响现有功能的前提下，收敛“防浏览器默认行为”的拦截点，保留“导入业务逻辑”的单一入口，减少重复与潜在冲突面。
-
-### 关键挑战和分析
-
-- 拖拽事件源的差异：外部（文件/URL）拖入与应用内拖拽（如 LayerPanel reorder）共享同一套 drag 事件，需要精准区分，否则会误把 move 变成 copy，或阻断内部拖拽交互。
-- foreignObject 的事件路径差异：Canvas 内部的 HTML 区域（`foreignObject`）可能导致冒泡监听不稳定，捕获阶段全局兜底能覆盖，但也更容易误伤内部拖拽。
-- 导入链路依赖：真正的导入解析与落点计算在 `useDragImport`，不能被“只做全局 preventDefault”替代。
-
-### 目标定义（可验收）
-
-- 外部拖入（文件/URL）：
-  - 浏览器不发生默认导航/打开文件行为。
-  - 拖入画布仍能正常导入图片（保留现有 `useDragImport` 行为与日志）。
-- 应用内拖拽（如图层面板重排）：
-  - `effectAllowed/move` 等语义不被全局逻辑强制改写为 copy。
-  - 不新增不可预期的 `stopPropagation` 导致拖拽失效。
-- 代码收敛：
-  - “防默认行为”的拦截点收敛到单一位置（优先全局捕获）。
-  - “导入业务逻辑”的事件挂载收敛到单一组件层级（优先根容器）。
-
-### 现状梳理（代码位置）
-
-- 全局拦截（捕获阶段）：
-  - `src/App.tsx`：`document/window addEventListener('drag*', prevent, { capture: true })`
-- 组件 capture 拦截：
-  - `src/App.tsx` 根容器：`onDragOverCapture/onDropCapture`
-  - `src/components/Canvas.tsx`：`<svg onDragOverCapture/onDropCapture ...>`
-- 导入业务逻辑（单一来源）：
-  - `src/hooks/useDragImport.ts`：`handleDragOver/handleDrop/handleDragLeave`
+- 可靠消息通道（推荐方案：站点配合 postMessage）：
+  - 需要 `p.vividai.com.cn` 在用户点击“复制”按钮时，同时向父窗口发送消息：
+    - `window.parent.postMessage({ type: 'VIVIDAI_PROMPT', prompt: '...' }, '*')`（或指定父域）
+  - 应用侧只接受来自 `https://p.vividai.com.cn` 的消息：
+    - 校验 `event.origin === 'https://p.vividai.com.cn'`
+    - 校验 payload 结构（type/prompt 字段）与长度上限（例如 20k 字符）以及类型为 string
+    - 通过统一入口 `setPrompt(prompt)` 写入并触发展开
+  - 该方案不依赖剪贴板权限、也不需要跨域 DOM 访问，符合浏览器安全模型，稳定性最高。
+- iframe 嵌入可用性预检与降级：
+  - 预检：在开发环境先验证 `https://p.vividai.com.cn/` 是否允许 iframe 嵌入（若被阻止则 iframe 区域无法展示）。
+  - 降级 A（无需站点配合）：工作台右上区域改为“打开网页”按钮（新标签页），工作台底部提供“从剪贴板粘贴到 PromptBar”按钮（需要用户额外点击一次）。
+  - 降级 B（需要较多工程与安全评审）：同域反向代理 + 注入脚本（可能涉及合规与维护成本，不作为首选）。
+- PromptBar 展开挤压 iframe 的可靠实现路径：
+  - 不重写 PromptBar 的高度/展开算法，仅通过容器布局让其“自然挤压”：
+    - 右侧容器 `display:flex; flex-direction:column; height:100%`
+    - iframe 容器 `flex:1; min-height:0; overflow:hidden`
+    - PromptBar 容器 `flex:none`
+  - 触发展开使用最小侵入接口：
+    - 通过新增 `expandRequestKey`（递增数字）或 `requestExpand()` 回调，让 PromptBar 内部 `useEffect` 触发 `setIsExpanded(true)`，避免将 `isExpanded` 全量外提造成大范围改动。
+- 网页优先的布局稳定性与响应式规避：
+  - 左侧预设列采用“紧凑+可折叠”策略，确保在 1366 宽度及以下仍可给 iframe 保留足够宽度。
+  - iframe 容器设置 `min-height` 与 `min-width`，避免 PromptBar 展开导致网页区过小不可用；必要时在极窄窗口下自动切换为“折叠左侧预设列”。
+  - 预设列表项由“卡牌”调整为“紧凑 list item”（缩略图/图标 + 名称），降低单项高度，减少滚动占用，提高网页区域可视占比。
+- 安全边界：
+  - 严格 origin 校验：只接受 `https://p.vividai.com.cn`。
+  - 只写入 prompt 文本，不执行任何脚本，不解析 HTML。
+  - 记录调试信息但不包含敏感数据（不记录用户密钥/令牌，不打出完整 prompt，必要时只记录长度与摘要）。
 
 ### 高层任务拆分（规划者 → 执行者实施顺序）
 
-1. 引入“外部拖入”判定函数并收敛全局拦截的适用范围
-  - 修改 `src/App.tsx` 的全局 `prevent`：
-    - 仅当判定为“外部拖入”（例如包含 `Files` 或 `text/uri-list`）时才执行 `preventDefault` 与 `dropEffect='copy'`。
-    - 对于疑似应用内拖拽：不设置 `dropEffect`，避免破坏 `move`。
-  - 成功标准：
-    - 外部拖入仍不会触发浏览器默认行为；
-    - 图层面板拖拽重排仍为 move 语义且可用。
+0. **前置验证（Task 0）** [已完成]
+   - 验证 `https://p.vividai.com.cn/` 的 iframe 嵌入可行性（X-Frame-Options/CSP）。
+   - **结果**：验证通过。响应头包含 `Content-Security-Policy: frame-ancestors *`，允许任意来源嵌入。无 `X-Frame-Options` 限制。
 
-2. 统一“导入业务逻辑”的事件挂载位置，移除重复 capture 拦截
-  - 方案 A（优先）：仅保留根容器的 `onDragEnter/onDragOver/onDragLeave/onDrop`（来自 `useDragImport`）
-    - 移除 `Canvas.tsx` `<svg>` 的 `onDragOverCapture/onDropCapture`，并评估是否也移除 `<svg>` 的 `onDragEnter/onDragOver/onDragLeave/onDrop`（避免重复触发与日志噪音）。
-    - 保留全局捕获作为兜底，覆盖 `foreignObject` 与不可控区域的默认行为。
-  - 成功标准：
-    - 导入事件只触发一套逻辑（不重复清理预览、不重复打印 drop 日志）；
-    - 不影响 Canvas 内原有鼠标交互（选择/拖拽/缩放）与 `foreignObject` 内按钮交互。
+1. 新增工作台 Dialog 与布局骨架（不接 iframe 通信）
+   - 新增 `BananaWorkspaceDialog`（三分区布局 + 固定尺寸 + 关闭逻辑 + **ESC 支持**）。
+   - 左侧天气列表：**实现搜索框**，复用数据，支持折叠。
+   - 右上 iframe 区域：**实现 Loading 状态与加载失败 UI**。
+   - 右下 PromptBar 占位。
+   - 成功标准：UI 骨架完整，响应式行为（折叠/展开）符合预期。
 
-3. 回归验证清单与观测点（必须可定位）
-  - 手动用例：
-    - 外部拖入本地图片到画布：不导航、能导入、预览元素正常清理。
-    - 外部拖入图片 URL：符合现有 `useDragImport` 的 URL 处理逻辑。
-    - 图层面板拖拽重排：仍能拖动排序，不出现 copy 光标或无响应。
-    - 在 Canvas 的 `foreignObject` 区域拖入/释放：不导航，导入行为一致。
-  - 调试信息（不含敏感信息）：
-    - 保留 `[GlobalDND]` 日志，但建议仅在“外部拖入”判定为真时输出，避免噪音与误判。
-    - 保留 `useDragImport` 的 `[DragImport]` drop/mem/anchor 日志用于定位导入问题。
-  - 命令验证：
-    - `npm run lint`
-    - `npx tsc --noEmit`
+2. 连接香蕉按钮触发与 App 状态（**状态提升重构**）
+   - 在 `App.tsx` 引入 `isBananaWorkspaceOpen` 状态。
+   - **关键**：将 PromptBar 的 `prompt` 状态提升至 `App.tsx`，确保主界面与工作台共享同一份数据（避免关闭丢失）。
+   - 成功标准：在工作台输入内容，关闭后主界面 PromptBar 保留内容。
 
-### 需要注意与可完善点（避免迁移影响现有功能）
+3. 实现“天气预设 → PromptBar”联动与展开请求
+   - 点击左侧列表项后：`setPrompt(value)` 并触发展开。
+   - 成功标准：点击预设，PromptBar 立即展示完整文本并进入展开态。
 
-- 全局捕获要避免“一刀切”：
-  - 不应对所有 drag 事件都强制 `dropEffect='copy'`，否则会干扰应用内 move/重排。
-- 事件冒泡与 stopPropagation 的边界：
-  - `useDragImport` 当前会 `stopPropagation()`；收敛挂载位置后要确保不会阻断 LayerPanel 等内部拖拽区域的事件链。
-- 逐步迁移策略：
-  - 优先做“全局拦截范围收敛”（低风险、可快速验证）。
-  - 再做“Canvas 捕获拦截移除/事件挂载收敛”（需要更全面的 UI 回归）。
+4. iframe 嵌入与消息桥（postMessage）
+   - 右上区域嵌入 iframe：默认指向 `https://p.vividai.com.cn/`。
+   - 应用侧监听 `message`，完成 origin + payload 校验后写入 PromptBar。
+   - 成功标准：站点发送 `VIVIDAI_PROMPT` 后，PromptBar 自动填入并展开。
 
-### 项目状态看板（拖拽拦截逻辑收敛）
+5. 降级策略与空状态体验
+   - 若 iframe 被阻止或长时间加载失败：展示“打开网页/复制粘贴”降级 UI。
+   - 成功标准：即使无法 iframe 嵌入，用户仍可完成提示词导入到 PromptBar 的主流程。
+
+6. 回归验证与性能边界
+   - 手动验证：不打开工作台时所有功能不变；打开时 iframe 挤压与 PromptBar 展开行为符合预期。
+   - 验证：快捷键是否冲突，Tab 键焦点循环是否正常。
+   - 命令验证：`npm run lint`, `npx tsc --noEmit`。
+   - 调试信息要求：`[VividAI] message { origin, type, promptLength }`。
+
+### 项目状态看板（香蕉按钮工作台界面重设计）
 
 #### 已完成
 
-- [x] 规划者：整理收敛目标与迁移方案
+- [x] 规划者：确认 postMessage 方案与 iframe 可嵌入性
+- [x] 执行者：新增工作台 Dialog 三分区布局骨架 (Task 1)
+- [x] 执行者：连接 App 状态与香蕉按钮触发入口（Task 2）
+- [x] 执行者：实现预设列表与 PromptBar 联动展开（Task 3）
+- [x] 执行者：实现 iframe 与 postMessage 安全消息桥 (Task 4)
+- [x] 执行者：实现 iframe 不可用时的降级交互 (Task 5)
+- [x] 执行者：回归验证并运行 lint/typecheck (Task 6)
+- [x] 规划者：项目验收
 
 #### 进行中
 
-- [ ] 规划者：确认“外部拖入”判定规则
-- [ ] 规划者：确认保留/移除的事件挂载点范围
-
 #### 待办
 
-- [ ] 执行者：收敛全局 prevent 到外部拖入
-- [ ] 执行者：移除 Canvas SVG capture 拦截
-- [ ] 执行者：评估移除 SVG 冒泡拖拽挂载
-- [ ] 执行者：回归验证外部拖入与图层重排
-- [ ] 执行者：运行 lint 与 typecheck
-
-### 当前状态/进度跟踪（拖拽拦截逻辑收敛）
+### 当前状态/进度跟踪（香蕉按钮工作台界面重设计）
 
 - 规划者：
-  - 状态：方案已补全，等待确认判定规则与迁移边界。
+  - 状态：所有任务已完成。项目验收通过。
+  - 下一步：无。项目结束。
 - 执行者：
-  - 状态：未开始（等待规划者确认后按任务看板执行）。
+  - 状态：所有代码已提交并验证通过（lint/tsc Clean）。
+  - 下一步：建议用户进行最终手动测试。
