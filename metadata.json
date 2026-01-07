@@ -1,5 +1,5 @@
 {
-  "name": "🍌 BananaPod_Arch (v1.2.8)",
+  "name": "🍌 BananaPod_Arch (v1.3.4)",
   "description": "A lightweight, extensible image generation and editing workbench built with React 19, Vite, and Electron. Features the PodUI theme, supports nano-banana series models for generation and editing, layer management, and a bilingual interface optimized for desktop and tablet use.",
   "requestFramePermissions": []
 }
