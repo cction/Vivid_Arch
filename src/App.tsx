@@ -36,6 +36,7 @@ import { PodUIPreview } from '@/components/PodUIPreview';
 import { PodButton } from '@/components/podui';
 import { getElementBounds } from '@/utils/canvas';
 import { BottomBar } from '@/features/bottombar/BottomBar';
+import { getWeatherPresetById } from '@/i18n/translations';
 
 const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -88,6 +89,23 @@ const App: React.FC = () => {
     const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
     const [selectionBox, setSelectionBox] = useState<Rect | null>(null);
     const [prompt, setPrompt] = useState('');
+    const [selectedWeatherId, setSelectedWeatherId] = useState<string | null>(() => {
+        try {
+            const raw = localStorage.getItem('BANANAPOD_SELECTED_WEATHER_ID');
+            if (raw) {
+                const parsed = JSON.parse(raw) as unknown;
+                return typeof parsed === 'string' ? parsed : null;
+            }
+            const legacyRaw = localStorage.getItem('BANANAPOD_SELECTED_WEATHER_IDS');
+            if (!legacyRaw) return null;
+            const parsedLegacy = JSON.parse(legacyRaw) as unknown;
+            if (!Array.isArray(parsedLegacy)) return null;
+            const first = parsedLegacy.find((v) => typeof v === 'string');
+            return typeof first === 'string' ? first : null;
+        } catch {
+            return null;
+        }
+    });
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
@@ -122,6 +140,36 @@ const App: React.FC = () => {
     useEffect(() => {
         try { localStorage.setItem('API_PROVIDER', apiProvider) } catch { void 0 }
     }, [apiProvider]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('BANANAPOD_SELECTED_WEATHER_ID', JSON.stringify(selectedWeatherId));
+        } catch {
+            void 0;
+        }
+    }, [selectedWeatherId]);
+
+    useEffect(() => {
+        try {
+            localStorage.removeItem('BANANAPOD_SELECTED_WEATHER_IDS');
+        } catch {
+            void 0;
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!selectedWeatherId) return;
+        const preset = getWeatherPresetById(language, selectedWeatherId);
+        if (!preset) setSelectedWeatherId(null);
+    }, [language, selectedWeatherId]);
+
+    const toggleWeatherId = useCallback((id: string) => {
+        setSelectedWeatherId((prev) => (prev === id ? null : id));
+    }, []);
+
+    const removeWeatherId = useCallback(() => {
+        setSelectedWeatherId(null);
+    }, []);
 
     const getAllowedImageModels = (provider: 'WHATAI' | 'Grsai') => {
         return provider === 'Grsai' ? ['nano-banana-fast', 'nano-banana-pro-cl'] : ['nano-banana', 'nano-banana-2'];
@@ -264,6 +312,7 @@ const App: React.FC = () => {
 
     useEffect(() => {
         setSelectedElementIds([]);
+        setSelectedWeatherId(null);
         setEditingElement(null);
         handleCancelCrop();
         setSelectionBox(null);
@@ -326,11 +375,34 @@ const App: React.FC = () => {
 
     const { handlePropertyChange, handleDownloadImage } = useElementOps({ commitAction });
 
+    const promptBuild = useMemo(() => {
+        const presetPrompt = (() => {
+            if (!selectedWeatherId) return '';
+            const preset = getWeatherPresetById(language, selectedWeatherId);
+            return preset?.value || '';
+        })();
+        const userPrompt = prompt;
+        const effectivePrompt = [presetPrompt, userPrompt].map((s) => (s || '').trim()).filter(Boolean).join('\n\n');
+        const presetChars = presetPrompt.length;
+        const userChars = userPrompt.length;
+        const effectiveChars = effectivePrompt.length;
+        const maxChars = 20000;
+        const policy = effectiveChars > maxChars ? 'blocked_max_chars' : 'ok';
+        return { presetChars, userChars, effectiveChars, maxChars, policy, effectivePrompt };
+    }, [language, prompt, selectedWeatherId]);
 
-    
+    const { handleGenerate, handleCancelGenerate } = useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, selectedElementIds, setSelectedElementIds, commitAction, setIsLoading, setProgressMessage, setError, effectivePrompt: promptBuild.effectivePrompt, generationMode, videoAspectRatio, imageAspectRatio, imageSize, imageModel, apiProvider, generateId });
 
-
-    const { handleGenerate, handleCancelGenerate } = useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, selectedElementIds, setSelectedElementIds, commitAction, setIsLoading, setProgressMessage, setError, prompt, generationMode, videoAspectRatio, imageAspectRatio, imageSize, imageModel, apiProvider, generateId });
+    const handleGenerateWithPromptBuild = useCallback(() => {
+        try {
+            console.log('[PromptBuild]', { id: selectedWeatherId, presetChars: promptBuild.presetChars, userChars: promptBuild.userChars, effectiveChars: promptBuild.effectiveChars, policy: promptBuild.policy });
+        } catch { void 0 }
+        if (promptBuild.policy !== 'ok') {
+            setError(`Prompt too long (${promptBuild.effectiveChars}/${promptBuild.maxChars}).`);
+            return;
+        }
+        handleGenerate();
+    }, [handleGenerate, promptBuild, selectedWeatherId, setError]);
 
 
     
@@ -614,7 +686,9 @@ const App: React.FC = () => {
                     language={language}
                     prompt={prompt}
                     setPrompt={setPrompt}
-                    onGenerate={handleGenerate}
+                    selectedWeatherId={selectedWeatherId}
+                    onRemoveWeatherId={removeWeatherId}
+                    onGenerate={handleGenerateWithPromptBuild}
                     onCancelGenerate={handleCancelGenerate}
                     isLoading={isLoading}
                     isSelectionActive={selectedElementIds.length > 0}
@@ -644,7 +718,10 @@ const App: React.FC = () => {
                 language={language}
                 prompt={prompt}
                 setPrompt={setPrompt}
-                onGenerate={handleGenerate}
+                selectedWeatherId={selectedWeatherId}
+                onToggleWeatherId={toggleWeatherId}
+                onRemoveWeatherId={removeWeatherId}
+                onGenerate={handleGenerateWithPromptBuild}
                 onCancelGenerate={handleCancelGenerate}
                 isLoading={isLoading}
                 isSelectionActive={selectedElementIds.length > 0}

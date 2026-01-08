@@ -62,26 +62,37 @@ const QUICK_PROMPTS_ZH = [
     { name: '表情参考', value: '人物换成新图片的表情' },
 ];
 
+export type WeatherPreset = { id: string; name: string; value: string };
+
 // Weather cards for BananaSidebar (bilingual)
-const BANANA_CARDS_EN: { name: string; value: string }[] = [
-  { name: 'Sunny', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Sunny: bright, warm sunlight, clear blue sky, crisp shadows.' },
-  { name: 'Morning', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Morning: soft morning light, golden hour glow, long gentle shadows, fresh atmosphere.' },
-  { name: 'Dusk', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Dusk: sunset glow, orange-pink tones, softer contrast, calm mood.' },
-  { name: 'Night Scene', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Night Scene: deep blues, city lights, neon highlights, reflective surfaces.' },
-  { name: 'Overcast', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Overcast: diffuse soft light, grey sky, low contrast, subtle shadows.' },
-  { name: 'Rainy', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Rainy: wet surfaces, raindrops, reflections, moody cinematic feel.' },
-  { name: 'Snowy', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Snowy: snow-covered ground, cool tones, soft light, serene atmosphere.' },
+const BANANA_CARDS_EN: WeatherPreset[] = [
+  { id: 'sunny', name: 'Sunny', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Sunny: bright, warm sunlight, clear blue sky, crisp shadows.' },
+  { id: 'morning', name: 'Morning', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Morning: soft morning light, golden hour glow, long gentle shadows, fresh atmosphere.' },
+  { id: 'dusk', name: 'Dusk', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Dusk: sunset glow, orange-pink tones, softer contrast, calm mood.' },
+  { id: 'night_scene', name: 'Night Scene', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Night Scene: deep blues, city lights, neon highlights, reflective surfaces.' },
+  { id: 'overcast', name: 'Overcast', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Overcast: diffuse soft light, grey sky, low contrast, subtle shadows.' },
+  { id: 'rainy', name: 'Rainy', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Rainy: wet surfaces, raindrops, reflections, moody cinematic feel.' },
+  { id: 'snowy', name: 'Snowy', value: 'Keep the main subject and composition unchanged; change the weather ambiance to Snowy: snow-covered ground, cool tones, soft light, serene atmosphere.' },
 ];
 
-const BANANA_CARDS_ZH: { name: string; value: string }[] = [
-  { name: '晴天', value: '保持画面主体和结构不变，将天气氛围改为晴天：明亮温暖的阳光、湛蓝天空、清晰利落的阴影。' },
-  { name: '清晨', value: '保持画面主体和结构不变，将天气氛围改为清晨：柔和晨光、黄金时刻、细长而轻柔的阴影、新鲜通透的氛围。' },
-  { name: '黄昏', value: '保持画面主体和结构不变，将天气氛围改为黄昏：日落余晖、橙粉色调、对比更柔和、氛围宁静。' },
-  { name: '夜景', value: '保持画面主体和结构不变，将天气氛围改为夜景：深蓝色调、城市灯光、霓虹高光、地面与物体反射明显。' },
-  { name: '阴天', value: '保持画面主体和结构不变，将天气氛围改为阴天：漫射柔光、灰色天空、低对比度、阴影轻微且柔和。' },
-  { name: '雨天', value: '保持画面主体和结构不变，将天气氛围改为雨天：潮湿路面、雨滴与水珠、倒影丰富、整体氛围情绪化。' },
-  { name: '雪景', value: '保持画面主体和结构不变，将天气氛围改为雪景：地面覆雪或飘雪、冷色调、柔和光照、静谧通透的氛围。' },
+const BANANA_CARDS_ZH: WeatherPreset[] = [
+  { id: 'sunny', name: '晴天', value: '保持画面主体和结构不变，将天气氛围改为晴天：明亮温暖的阳光、湛蓝天空、清晰利落的阴影。' },
+  { id: 'morning', name: '清晨', value: '保持画面主体和结构不变，将天气氛围改为清晨：柔和晨光、黄金时刻、细长而轻柔的阴影、新鲜通透的氛围。' },
+  { id: 'dusk', name: '黄昏', value: '保持画面主体和结构不变，将天气氛围改为黄昏：日落余晖、橙粉色调、对比更柔和、氛围宁静。' },
+  { id: 'night_scene', name: '夜景', value: '保持画面主体和结构不变，将天气氛围改为夜景：深蓝色调、城市灯光、霓虹高光、地面与物体反射明显。' },
+  { id: 'overcast', name: '阴天', value: '保持画面主体和结构不变，将天气氛围改为阴天：漫射柔光、灰色天空、低对比度、阴影轻微且柔和。' },
+  { id: 'rainy', name: '雨天', value: '保持画面主体和结构不变，将天气氛围改为雨天：潮湿路面、雨滴与水珠、倒影丰富、整体氛围情绪化。' },
+  { id: 'snowy', name: '雪景', value: '保持画面主体和结构不变，将天气氛围改为雪景：地面覆雪或飘雪、冷色调、柔和光照、静谧通透的氛围。' },
 ];
+
+export const getWeatherPresets = (language: 'en' | 'ZH'): WeatherPreset[] => {
+  return language === 'ZH' ? BANANA_CARDS_ZH : BANANA_CARDS_EN;
+};
+
+export const getWeatherPresetById = (language: 'en' | 'ZH', id: string): WeatherPreset | null => {
+  const presets = getWeatherPresets(language);
+  return presets.find((p) => p.id === id) ?? null;
+};
 
 export const translations = {
   en: {

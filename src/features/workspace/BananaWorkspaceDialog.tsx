@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { translations } from '@/i18n/translations';
+import { translations, WeatherPreset } from '@/i18n/translations';
 import { PromptBar, PromptBarProps } from '@/features/prompt/PromptBar';
 
 interface BananaWorkspaceDialogProps extends PromptBarProps {
   open: boolean;
   onClose: () => void;
+  onToggleWeatherId: (id: string) => void;
   // prompt, setPrompt, language are inherited from PromptBarProps
 }
 
@@ -137,6 +138,7 @@ export function BananaWorkspaceDialog({
   onClose, 
   language, 
   setPrompt,
+  onToggleWeatherId,
   ...promptBarProps 
 }: BananaWorkspaceDialogProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -224,7 +226,7 @@ export function BananaWorkspaceDialog({
     return (translations[language as keyof typeof translations] as any)?.[key] || key;
   };
 
-  const bananaCards = (translations[language].bananaCards || []) as { name: string; value: string }[];
+  const bananaCards = (translations[language].bananaCards || []) as WeatherPreset[];
   const filteredCards = bananaCards.filter((card) =>
     card.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     card.value.toLowerCase().includes(searchTerm.toLowerCase())
@@ -311,25 +313,38 @@ export function BananaWorkspaceDialog({
 
           {/* Sidebar List */}
           <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1 custom-scrollbar">
-            {filteredCards.map((card, index) => (
+            {filteredCards.map((card) => {
+              const isSelected = promptBarProps.selectedWeatherId === card.id;
+              const disabled = promptBarProps.isLoading;
+              return (
               <button
-                key={index}
+                key={card.id}
+                disabled={disabled}
+                aria-pressed={isSelected}
                 className={`w-full flex items-center gap-3 p-2.5 rounded-md transition-all group text-left ${
                   isSidebarCollapsed ? 'justify-center' : ''
-                } hover:bg-white/5 active:bg-white/10`}
+                } ${
+                  isSelected ? 'bg-white/10 ring-1 ring-[#C5AEF6]/40' : 'hover:bg-white/5 active:bg-white/10'
+                } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={card.name}
                 onClick={() => {
-                  if (setPrompt) {
-                    setPrompt(card.value);
-                  }
-                  console.log('Preset clicked:', card.name);
+                  if (disabled) return;
+                  onToggleWeatherId(card.id);
+                  requestAnimationFrame(() => {
+                    const el = document.querySelector('textarea.pod-prompt-textarea') as HTMLTextAreaElement | null;
+                    el?.focus();
+                  });
                 }}
               >
-                <div className="relative w-9 h-9 rounded-md overflow-hidden flex-shrink-0 bg-[#27272a] shadow-sm group-hover:shadow-md transition-shadow">
+                <div
+                  className={`relative w-9 h-9 rounded-md overflow-hidden flex-shrink-0 bg-[#27272a] shadow-sm transition-shadow ${
+                    isSelected ? 'ring-2 ring-[#C5AEF6]/60' : 'group-hover:shadow-md'
+                  }`}
+                >
                    <img 
                      src={getCardImageSrc(card.name)} 
                      alt={card.name}
-                     className="w-full h-full object-cover opacity-75 group-hover:opacity-100 transition-opacity grayscale group-hover:grayscale-0"
+                     className="w-full h-full object-cover opacity-75 group-hover:opacity-100 transition-opacity"
                      onError={(e) => {
                         const fb = getLocalIconSrc(card.name);
                         e.currentTarget.src = fb ?? makeSvgDataUrl(card.name);
@@ -343,7 +358,8 @@ export function BananaWorkspaceDialog({
                   </div>
                 )}
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 

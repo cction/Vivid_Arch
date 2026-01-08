@@ -2,15 +2,24 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QuickPrompts } from './QuickPrompts';
-import { BananaSidebar } from '@/features/sidebar/BananaSidebar';
-import { IconButton, Textarea } from '../../ui';
+import { Chip, IconButton, Textarea } from '../../ui';
 import type { UserEffect, GenerationMode } from '@/types';
+import { getWeatherPresetById } from '@/i18n/translations';
+
+const BASE_URL = ((import.meta as unknown as { env?: { BASE_URL?: string } })?.env?.BASE_URL) || '/';
+const withBase = (p: string) => {
+    const normalized = p.startsWith('/') ? p.slice(1) : p;
+    return `${BASE_URL}${normalized}`;
+};
+const BANANA_ICON_SRC = withBase('logo/AIVA.svg');
 
 export interface PromptBarProps {
     t: (key: string, ...args: unknown[]) => string;
     language: 'en' | 'ZH';
     prompt: string;
     setPrompt: (prompt: string) => void;
+    selectedWeatherId: string | null;
+    onRemoveWeatherId: () => void;
     onGenerate: () => void;
     onCancelGenerate: () => void;
     isLoading: boolean;
@@ -69,11 +78,144 @@ const ASPECT_RATIOS = [
     { id: '21:9', label: '21:9' },
 ];
 
+type PromptInputWithPrefixTagProps = {
+    language: 'en' | 'ZH';
+    prompt: string;
+    setPrompt: (prompt: string) => void;
+    selectedWeatherId: string | null;
+    onRemoveWeatherId: () => void;
+    onGenerate: () => void;
+    isLoading: boolean;
+    placeholder: string;
+    textareaPadding: string;
+    currentMaxHeight: number;
+    textareaRef: React.RefObject<HTMLTextAreaElement>;
+    space3: number;
+    space4: number;
+};
+
+function PromptInputWithPrefixTag({
+    language,
+    prompt,
+    setPrompt,
+    selectedWeatherId,
+    onRemoveWeatherId,
+    onGenerate,
+    isLoading,
+    placeholder,
+    textareaPadding,
+    currentMaxHeight,
+    textareaRef,
+    space3,
+    space4,
+}: PromptInputWithPrefixTagProps) {
+    const chipMeasureRef = useRef<HTMLDivElement>(null);
+    const [chipIndentPx, setChipIndentPx] = useState(0);
+    const preset = selectedWeatherId ? getWeatherPresetById(language, selectedWeatherId) : null;
+    const presetLabel = preset?.name || selectedWeatherId || '';
+
+    useEffect(() => {
+        if (!selectedWeatherId) return;
+        const node = chipMeasureRef.current;
+        if (!node) return;
+        let raf = 0;
+        const measure = () => {
+            const rect = node.getBoundingClientRect();
+            const next = Math.ceil(rect.width + 8);
+            setChipIndentPx((prev) => (prev === next ? prev : next));
+        };
+        const schedule = () => {
+            if (raf) cancelAnimationFrame(raf);
+            raf = requestAnimationFrame(measure);
+        };
+        schedule();
+        const ro = new ResizeObserver(() => schedule());
+        ro.observe(node);
+        window.addEventListener('resize', schedule, { passive: true });
+        return () => {
+            ro.disconnect();
+            window.removeEventListener('resize', schedule);
+            if (raf) cancelAnimationFrame(raf);
+        };
+    }, [selectedWeatherId, language]);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if ((e.key === 'Backspace' || e.key === 'Delete') && selectedWeatherId && !isLoading) {
+            if (e.ctrlKey || e.altKey || e.metaKey) return;
+            const native = e.nativeEvent as unknown as { isComposing?: boolean };
+            if (native?.isComposing) return;
+            const target = e.currentTarget;
+            if (target.selectionStart === 0 && target.selectionEnd === 0) {
+                e.preventDefault();
+                onRemoveWeatherId();
+                requestAnimationFrame(() => {
+                    const el = textareaRef.current;
+                    el?.focus();
+                    try {
+                        el?.setSelectionRange(0, 0);
+                    } catch {
+                        void 0;
+                    }
+                });
+                return;
+            }
+        }
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (!isLoading && (prompt.trim() || selectedWeatherId)) {
+                onGenerate();
+            }
+        }
+    };
+
+    return (
+        <>
+            {selectedWeatherId && (
+                <div
+                    ref={chipMeasureRef}
+                    className="absolute z-10 select-none"
+                    style={{ left: `${space3}px`, top: `${space4}px` }}
+                >
+                    <Chip
+                        disabled={isLoading}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                            onRemoveWeatherId();
+                            textareaRef.current?.focus();
+                        }}
+                        className="!min-h-0 !h-[20px] !text-xs !leading-none !px-2 !py-0 !rounded-md !font-medium flex items-center justify-center !bg-neutral-200 dark:!bg-neutral-700 hover:!bg-neutral-300 dark:hover:!bg-neutral-600 !text-neutral-600 dark:!text-neutral-300 !border-0 transition-colors"
+                        title={presetLabel}
+                    >
+                        {presetLabel}
+                    </Chip>
+                </div>
+            )}
+            <Textarea
+                ref={textareaRef}
+                rows={3}
+                value={prompt}
+                onChange={(e) => setPrompt((e.target as HTMLTextAreaElement).value)}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder}
+                className="pod-prompt-textarea pod-scrollbar-y"
+                style={{
+                    '--pod-textarea-padding': textareaPadding,
+                    maxHeight: `${currentMaxHeight}px`,
+                    textIndent: selectedWeatherId ? `${chipIndentPx}px` : undefined,
+                } as React.CSSProperties}
+                disabled={isLoading}
+                autoFocus
+            />
+        </>
+    );
+}
+
 export const PromptBar: React.FC<PromptBarProps> = ({
     t,
     language,
     prompt,
     setPrompt,
+    onRemoveWeatherId,
     onGenerate,
     isLoading,
     isSelectionActive,
@@ -99,7 +241,8 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     forceExpanded,
     className,
     noBorderRadius,
-    noBorder
+    noBorder,
+    selectedWeatherId
 }) => {
     const [isExpanded, setIsExpanded] = useState(forceExpanded || false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -108,7 +251,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     const handleGenerateClick = () => {
         if (isLoading) {
             onCancelGenerate();
-        } else if (prompt.trim()) {
+        } else if (prompt.trim() || selectedWeatherId) {
             onGenerate();
         }
     };
@@ -166,11 +309,11 @@ export const PromptBar: React.FC<PromptBarProps> = ({
 
     // Auto-expand if prompt is not empty
     useEffect(() => {
-        if (prompt.trim().length > 0 && !isExpanded) {
+        if ((prompt.trim().length > 0 || selectedWeatherId) && !isExpanded) {
             const id = setTimeout(() => setIsExpanded(true), 0);
             return () => clearTimeout(id);
         }
-    }, [prompt, isExpanded]);
+    }, [prompt, selectedWeatherId, isExpanded]);
 
     // Click outside to collapse
     useEffect(() => {
@@ -190,13 +333,13 @@ export const PromptBar: React.FC<PromptBarProps> = ({
             }
 
             const now = Date.now();
-            if (prompt.trim().length === 0 && !(inWrapper || inModelButton || inModelPortal || inRatioButton || inRatioPortal) && now >= blockCollapseUntilRef.current) {
+            if (prompt.trim().length === 0 && !selectedWeatherId && !(inWrapper || inModelButton || inModelPortal || inRatioButton || inRatioPortal) && now >= blockCollapseUntilRef.current) {
                 setIsExpanded(false);
             }
         };
         document.addEventListener('click', handleClickOutside);
         return () => document.removeEventListener('click', handleClickOutside);
-    }, [prompt]);
+    }, [prompt, selectedWeatherId]);
 
     useEffect(() => {
         const el = textareaRef.current;
@@ -232,15 +375,6 @@ export const PromptBar: React.FC<PromptBarProps> = ({
         return t('promptBar.placeholderMultiple', selectedElementCount);
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            if (!isLoading && prompt.trim()) {
-                onGenerate();
-            }
-        }
-    };
-
     const handleSaveEffect = () => {
         let name: string | null = null;
         const canPrompt = typeof window !== 'undefined' && typeof window.prompt === 'function';
@@ -252,12 +386,6 @@ export const PromptBar: React.FC<PromptBarProps> = ({
         if (finalName && prompt.trim()) {
             onAddUserEffect({ id: `user_${Date.now()}`, name: finalName, value: prompt });
         }
-    };
-
-    // Handle Banana Sidebar selection
-    const handleBananaSelect = (val: string) => {
-        setPrompt(val);
-        setIsExpanded(true);
     };
 
     const MODELS = apiProvider === 'Grsai'
@@ -283,7 +411,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     })();
 
     const currentMaxHeight = isPromptCollapsed ? 104 : maxTextareaHeight;
-    const isPromptEmpty = !prompt.trim();
+    const isPromptEmpty = !prompt.trim() && !selectedWeatherId;
     const isGenerating = isLoading;
 
     const containerClasses = mode === 'static'
@@ -345,16 +473,27 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                         >
                             <div className="flex items-center gap-3 w-full">
                                 <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                    <BananaSidebar
-                                        t={t}
-                                        language={language}
-                                        setPrompt={handleBananaSelect}
-                                        onGenerate={() => { }}
-                                        disabled={isLoading}
-                                        promptBarOffsetPx={0}
-                                        buttonSize={40}
-                                        onTrigger={onBananaClick}
-                                    />
+                                    <button
+                                        onClick={() => onBananaClick?.()}
+                                        disabled={isLoading || !onBananaClick}
+                                        aria-label="Open workspace"
+                                        title="Open workspace"
+                                        className="pod-banana-trigger"
+                                        style={{ height: 40, width: 40 }}
+                                    >
+                                        <img
+                                            src={BANANA_ICON_SRC}
+                                            width={40}
+                                            height={40}
+                                            alt="aiva"
+                                            className="block"
+                                            onError={(e) => {
+                                                const t = e.currentTarget;
+                                                t.onerror = null;
+                                                t.src = BANANA_ICON_SRC;
+                                            }}
+                                        />
+                                    </button>
                                 </div>
                                 <span className="text-neutral-400 text-sm font-medium truncate select-none">
                                     Talk to me...
@@ -429,17 +568,20 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                     )}
                                 </div>
 
-                                <Textarea
-                                    ref={textareaRef}
-                                    rows={3}
-                                    value={prompt}
-                                    onChange={(e) => setPrompt((e.target as HTMLTextAreaElement).value)}
-                                    onKeyDown={handleKeyDown}
+                                <PromptInputWithPrefixTag
+                                    language={language}
+                                    prompt={prompt}
+                                    setPrompt={setPrompt}
+                                    selectedWeatherId={selectedWeatherId}
+                                    onRemoveWeatherId={onRemoveWeatherId}
+                                    onGenerate={onGenerate}
+                                    isLoading={isLoading}
                                     placeholder={getPlaceholderText()}
-                                    className="pod-prompt-textarea pod-scrollbar-y"
-                                    style={{ '--pod-textarea-padding': textareaPadding, maxHeight: `${currentMaxHeight}px` } as React.CSSProperties}
-                                    disabled={isLoading}
-                                    autoFocus
+                                    textareaPadding={textareaPadding}
+                                    currentMaxHeight={currentMaxHeight}
+                                    textareaRef={textareaRef}
+                                    space3={space3}
+                                    space4={space4}
                                 />
                             </div>
 
@@ -447,16 +589,27 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                             <div className="flex items-center justify-between pt-1">
                                 {/* Left: Banana Button */}
                                 <div className="relative">
-                                    <BananaSidebar
-                                        t={t}
-                                        language={language}
-                                        setPrompt={setPrompt}
-                                        onGenerate={onGenerate}
-                                        disabled={isLoading}
-                                        promptBarOffsetPx={0}
-                                        buttonSize={36}
-                                        onTrigger={onBananaClick}
-                                    />
+                                    <button
+                                        onClick={() => onBananaClick?.()}
+                                        disabled={isLoading || !onBananaClick}
+                                        aria-label="Open workspace"
+                                        title="Open workspace"
+                                        className="pod-banana-trigger"
+                                        style={{ height: 36, width: 36 }}
+                                    >
+                                        <img
+                                            src={BANANA_ICON_SRC}
+                                            width={36}
+                                            height={36}
+                                            alt="aiva"
+                                            className="block"
+                                            onError={(e) => {
+                                                const t = e.currentTarget;
+                                                t.onerror = null;
+                                                t.src = BANANA_ICON_SRC;
+                                            }}
+                                        />
+                                    </button>
                                 </div>
 
                                 {/* Right: Settings & Generate */}

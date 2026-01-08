@@ -17,7 +17,7 @@ type Deps = {
   setIsLoading: Dispatch<SetStateAction<boolean>>
   setProgressMessage: Dispatch<SetStateAction<string>>
   setError: Dispatch<SetStateAction<string | null>>
-  prompt: string
+  effectivePrompt: string
   generationMode: 'image' | 'video'
   videoAspectRatio: string
   imageAspectRatio: string | null
@@ -125,7 +125,7 @@ function rasterizeMask(maskPaths: PathElement[], baseImage: ImageElement): Promi
   })
 }
 
-export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, selectedElementIds, setSelectedElementIds, commitAction, setIsLoading, setProgressMessage, setError, prompt, generationMode, videoAspectRatio, imageAspectRatio, imageSize, imageModel, apiProvider, generateId }: Deps) {
+export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, selectedElementIds, setSelectedElementIds, commitAction, setIsLoading, setProgressMessage, setError, effectivePrompt, generationMode, videoAspectRatio, imageAspectRatio, imageSize, imageModel, apiProvider, generateId }: Deps) {
   const generationTokenRef = useRef(0)
 
   const handleCancelGenerate = useCallback(() => {
@@ -157,7 +157,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
 
   const handleGenerate = useCallback(async () => {
     const token = ++generationTokenRef.current
-    if (!prompt.trim()) {
+    if (!effectivePrompt.trim()) {
       setError('Please enter a prompt.')
       return
     }
@@ -198,7 +198,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
           safeSetIsLoading(false)
           return
         }
-        const { videoBlob, mimeType } = await generateVideo(prompt, videoAspectRatio as '16:9' | '9:16', (message) => safeSetProgressMessage(message), imageElement ? { href: imageElement.href, mimeType: imageElement.mimeType } : undefined)
+        const { videoBlob, mimeType } = await generateVideo(effectivePrompt, videoAspectRatio as '16:9' | '9:16', (message) => safeSetProgressMessage(message), imageElement ? { href: imageElement.href, mimeType: imageElement.mimeType } : undefined)
         safeSetProgressMessage('Processing video...')
         const videoUrl = URL.createObjectURL(videoBlob)
         const video = document.createElement('video')
@@ -273,7 +273,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
             }))
             return
           }
-          const result = await editImageWhatai(prompt, [{ href: baseImage.href, mimeType: baseImage.mimeType }], { imageSize, mask: { href: maskData.href, mimeType: maskData.mimeType }, model: imageModel })
+          const result = await editImageWhatai(effectivePrompt, [{ href: baseImage.href, mimeType: baseImage.mimeType }], { imageSize, mask: { href: maskData.href, mimeType: maskData.mimeType }, model: imageModel })
           if (result.newImageBase64 && result.newImageMimeType) {
             const { newImageBase64, newImageMimeType } = result
             loadImageWithFallback(newImageBase64, newImageMimeType).then(({ img, href }) => {
@@ -343,8 +343,8 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
         })
         const imagesToProcess = await Promise.all(imagePromises)
         const result = apiProvider === 'Grsai'
-          ? await editImageGrsai(prompt, imagesToProcess, { imageSize, model: (imageModel as 'nano-banana-fast' | 'nano-banana-pro-cl') })
-          : await editImageWhatai(prompt, imagesToProcess, { imageSize, model: imageModel })
+          ? await editImageGrsai(effectivePrompt, imagesToProcess, { imageSize, model: (imageModel as 'nano-banana-fast' | 'nano-banana-pro-cl') })
+          : await editImageWhatai(effectivePrompt, imagesToProcess, { imageSize, model: imageModel })
         {
           const dbg = typeof window !== 'undefined' ? (localStorage.getItem('debug.gen.fail') || '') : ''
           if (dbg === 'result') {
@@ -450,8 +450,8 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
         }
 
         const result = apiProvider === 'Grsai'
-          ? await generateImageFromTextGrsai(prompt, (imageModel as 'nano-banana-fast' | 'nano-banana-pro-cl') || undefined, { aspectRatio, imageSize })
-          : await generateImageFromTextWhatai(prompt, imageModel || undefined, { aspectRatio, imageSize })
+          ? await generateImageFromTextGrsai(effectivePrompt, (imageModel as 'nano-banana-fast' | 'nano-banana-pro-cl') || undefined, { aspectRatio, imageSize })
+          : await generateImageFromTextWhatai(effectivePrompt, imageModel || undefined, { aspectRatio, imageSize })
         {
           const dbg = typeof window !== 'undefined' ? (localStorage.getItem('debug.gen.fail') || '') : ''
           if (dbg === 'result') {
@@ -542,7 +542,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
     } finally {
       safeSetIsLoading(false)
     }
-  }, [prompt, generationMode, elementsRef, selectedElementIds, setSelectedElementIds, commitAction, setIsLoading, setProgressMessage, setError, svgRef, getCanvasPoint, videoAspectRatio, imageAspectRatio, imageSize, imageModel, apiProvider, generateId])
+  }, [effectivePrompt, generationMode, elementsRef, selectedElementIds, setSelectedElementIds, commitAction, setIsLoading, setProgressMessage, setError, svgRef, getCanvasPoint, videoAspectRatio, imageAspectRatio, imageSize, imageModel, apiProvider, generateId])
 
   return { handleGenerate, handleCancelGenerate }
 }
