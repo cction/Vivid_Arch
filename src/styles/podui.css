@@ -78,6 +78,19 @@
   --grid-dot-color: #8a8a90;
   --grid-dot-opacity: 0.35;
   --grid-gap: 24px;
+
+  --banana-header-height: 48px;
+  
+  /* --- Workspace Theme --- */
+  --workspace-bg-sidebar: #161618;
+  --workspace-bg-main: #1c1c1f;
+  --workspace-bg-header: var(--workspace-bg-sidebar);
+  --workspace-border: rgba(255, 255, 255, 0.08);
+  --workspace-input-bg: rgba(255, 255, 255, 0.05);
+  --workspace-input-focus-bg: rgba(255, 255, 255, 0.08);
+  --workspace-card-bg: rgba(255, 255, 255, 0.04);
+  --workspace-card-ring: #C5AEF6;
+
   --grid-dot-size: 1.5px;
   --pod-panel-bg: var(--bg-component);
   --pod-border-color: var(--border-color);
@@ -1154,6 +1167,19 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+.pod-text-white-sheen {
+  background: linear-gradient(90deg, rgba(255,255,255,0.55), rgba(255,255,255,0.95), rgba(255,255,255,0.72), rgba(255,255,255,0.98), rgba(197,174,246,0.92), rgba(255,255,255,0.98), rgba(255,255,255,0.55));
+  background-size: 260% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: pod-text-white-sheen 23s ease-in-out infinite;
+}
+@keyframes pod-text-white-sheen {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 .pod-text-copper-sheen {
   background: linear-gradient(90deg, #733A1A, #B87333, #A36B3F, #8C4A1E, #733A1A);
   background-size: 200% auto;
@@ -1226,6 +1252,15 @@
 .pod-banana-card-container:hover {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   background-color: rgba(255, 255, 255, 0.15);
+}
+
+.banana-workspace-header {
+  min-height: var(--banana-header-height);
+  height: var(--banana-header-height);
+}
+
+.banana-workspace-search-input {
+  height: 28px;
 }
 .pod-chip-image {
   background-color: #4F378B;
@@ -1460,6 +1495,7 @@
   .pod-chip-circle-sheen::after,
   .pod-text-gold-sheen,
   .pod-text-silver-sheen,
+  .pod-text-white-sheen,
   .pod-text-copper-sheen,
   .pod-radial-gradient-animated {
     animation: none !important;
@@ -1476,6 +1512,11 @@
   .pod-text-silver-sheen {
     color: #D1D5DB;
     -webkit-text-fill-color: #D1D5DB;
+    background: none;
+  }
+  .pod-text-white-sheen {
+    color: rgba(255,255,255,0.92);
+    -webkit-text-fill-color: rgba(255,255,255,0.92);
     background: none;
   }
   .pod-text-copper-sheen {

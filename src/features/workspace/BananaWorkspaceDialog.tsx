@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { translations, WeatherPreset } from '@/i18n/translations';
 import { PromptBar, PromptBarProps } from '@/features/prompt/PromptBar';
@@ -155,6 +155,11 @@ export function BananaWorkspaceDialog({
 }: BananaWorkspaceDialogProps) {
   const WEB_TITLE = 'Prompt Lab';
   const COMPACT_KEY = 'BANANAPOD_WORKSPACE_COMPACT';
+  const IFRAME_URL = 'https://p.vividai.com.cn/';
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const iframeWindowRef = useRef<Window | null>(null);
+  const sessionIdRef = useRef<string>('');
+  const initSentRef = useRef(false);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isCompact, setIsCompact] = useState(() => {
@@ -169,6 +174,45 @@ export function BananaWorkspaceDialog({
   const [iframeLoading, setIframeLoading] = useState(true);
   const [iframeError, setIframeError] = useState(false);
   const sidebarCollapsed = isCompact ? false : isSidebarCollapsed;
+
+  const createSessionId = () => {
+    const now = Date.now();
+    try {
+      const buf = new Uint32Array(2);
+      crypto.getRandomValues(buf);
+      return `bws_${now}_${buf[0].toString(16)}${buf[1].toString(16)}`;
+    } catch {
+      return `bws_${now}_${Math.random().toString(16).slice(2)}`;
+    }
+  };
+
+  const getIframeOrigin = () => {
+    try {
+      const src = iframeRef.current?.src || IFRAME_URL;
+      return new URL(src).origin;
+    } catch {
+      return '';
+    }
+  };
+
+  const postInitToIframe = () => {
+    const win = iframeWindowRef.current;
+    if (!win) return;
+    const origin = getIframeOrigin();
+    if (!origin) return;
+    if (!sessionIdRef.current) return;
+    win.postMessage(
+      {
+        type: 'VIVIDAI_INIT',
+        version: 1,
+        sessionId: sessionIdRef.current,
+        capabilities: { promptSync: true },
+        requestReady: true,
+      },
+      origin
+    );
+    initSentRef.current = true;
+  };
 
   // Handle ESC key
   useEffect(() => {
@@ -194,21 +238,46 @@ export function BananaWorkspaceDialog({
         isTrusted: event.isTrusted
       });
 
-      const ALLOWED_ORIGINS = ['https://p.vividai.com.cn'];
-      
-      // Allow exact match or if it's from the same site (useful for testing if run locally)
-      // Also check if the origin ends with vividai.com.cn to allow subdomains if needed
-      if (!ALLOWED_ORIGINS.includes(event.origin) && !event.origin.endsWith('.vividai.com.cn')) {
-        console.warn('[BananaWorkspace] Blocked message from unauthorized origin:', event.origin);
+      const expectedOrigin = getIframeOrigin();
+      if (expectedOrigin && event.origin !== expectedOrigin) {
+        console.warn('[BananaWorkspace] Blocked message from unexpected origin:', event.origin);
+        return;
+      }
+
+      if (iframeWindowRef.current && event.source !== iframeWindowRef.current) {
+        console.warn('[BananaWorkspace] Blocked message from unexpected source window');
         return;
       }
 
       try {
-        const { type, prompt: newPrompt } = event.data || {};
+        const data = event.data;
+        if (!data || typeof data !== 'object') return;
+        const msg = data as { type?: unknown; prompt?: unknown; sessionId?: unknown; version?: unknown };
+        const type = msg.type;
+        const newPrompt = msg.prompt;
+        const incomingSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+        const incomingVersion = msg.version;
+
+        if (incomingVersion !== 1) return;
+        if (!incomingSessionId || incomingSessionId !== sessionIdRef.current) {
+          const src = event.source as Window | null;
+          if (src && typeof (src as unknown as { postMessage?: unknown }).postMessage === 'function') {
+            src.postMessage(
+              { type: 'VIVIDAI_PROMPT_ACK', version: 1, sessionId: sessionIdRef.current, ok: false, reason: 'session_mismatch' },
+              event.origin
+            );
+          }
+          return;
+        }
         
         // Log if we see a VIVIDAI_PROMPT type, even if other checks fail
         if (type === 'VIVIDAI_PROMPT') {
             console.log('[BananaWorkspace] Found VIVIDAI_PROMPT message. Payload:', newPrompt);
+        }
+
+        if (type === 'VIVIDAI_READY') {
+          console.log('[BananaWorkspace] Iframe READY:', { sessionId: incomingSessionId });
+          return;
         }
 
         if (type === 'VIVIDAI_PROMPT' && typeof newPrompt === 'string') {
@@ -218,12 +287,26 @@ export function BananaWorkspaceDialog({
              if (setPrompt) {
                setPrompt(newPrompt.slice(0, 20000));
              }
+             const src = event.source as Window | null;
+             if (src && typeof (src as unknown as { postMessage?: unknown }).postMessage === 'function') {
+               src.postMessage(
+                 { type: 'VIVIDAI_PROMPT_ACK', version: 1, sessionId: sessionIdRef.current, ok: true, truncated: true },
+                 event.origin
+               );
+             }
              return;
            }
 
            console.log('[BananaWorkspace] Successfully syncing prompt from iframe:', newPrompt.slice(0, 20) + '...');
            if (setPrompt) {
              setPrompt(newPrompt);
+           }
+           const src = event.source as Window | null;
+           if (src && typeof (src as unknown as { postMessage?: unknown }).postMessage === 'function') {
+             src.postMessage(
+               { type: 'VIVIDAI_PROMPT_ACK', version: 1, sessionId: sessionIdRef.current, ok: true },
+               event.origin
+             );
            }
         }
       } catch (err) {
@@ -242,6 +325,9 @@ export function BananaWorkspaceDialog({
       setIframeLoading(true);
       setIframeError(false);
       setSearchTerm('');
+      const sid = createSessionId();
+      sessionIdRef.current = sid;
+      initSentRef.current = false;
     }
   }, [open]);
 
@@ -283,7 +369,7 @@ export function BananaWorkspaceDialog({
               ease: [0.16, 1, 0.3, 1],
               layout: { duration: 0.4, ease: [0.16, 1, 0.3, 1] }
             }} 
-            className="relative flex overflow-hidden rounded-xl bg-[#18181b] border border-[#27272a] shadow-xl pointer-events-auto"
+            className="relative flex overflow-hidden rounded-xl bg-[var(--workspace-bg-main)] border border-[var(--workspace-border)] shadow-xl pointer-events-auto"
             style={{
               width: isCompact ? 'min(92vw, 1080px)' : 'min(96vw, 1440px)',
               height: isCompact ? 'auto' : 'min(90vh, 860px)',
@@ -294,7 +380,7 @@ export function BananaWorkspaceDialog({
             {/* LEFT: Sidebar */}
             <motion.div 
               layout="position"
-              className="flex flex-col border-r border-[#27272a] bg-[#121214] z-10"
+              className="flex flex-col border-r border-[var(--workspace-border)] bg-[var(--workspace-bg-sidebar)] z-10"
               initial={false}
               animate={{
                 width: isCompact ? 180 : (sidebarCollapsed ? 64 : 220)
@@ -314,16 +400,16 @@ export function BananaWorkspaceDialog({
               }}
             >
               {/* Sidebar Header */}
-              <div className="flex flex-col p-3 border-b border-[#27272a] bg-[#121214] min-h-[60px] justify-center">
+              <div className="banana-workspace-header flex items-center px-3 border-b border-[var(--workspace-border)] bg-[var(--workspace-bg-header)]">
                 {!sidebarCollapsed ? (
                   <div className="flex items-center gap-2">
                     <div className="relative group flex-1">
-                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-white/30 group-focus-within:text-white/60 transition-colors">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-white/10 group-focus-within:text-white/40 group-hover:text-white/30 transition-colors">
                         <SearchIcon />
                       </div>
                       <input
                         type="text"
-                        className="w-full bg-[#27272a]/50 border border-transparent focus:border-[#3f3f46] rounded-md py-1.5 pl-8 pr-2 text-xs text-white placeholder-white/30 focus:outline-none focus:bg-[#27272a] transition-all"
+                        className="banana-workspace-search-input w-full bg-transparent border-none rounded-md pl-8 pr-2 text-xs text-white placeholder-white/10 focus:outline-none focus:bg-[var(--workspace-input-focus-bg)] hover:bg-[var(--workspace-input-bg)] focus:ring-1 focus:ring-white/5 transition-all"
                         placeholder={t('search') || 'Search...'}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -374,17 +460,22 @@ export function BananaWorkspaceDialog({
                       key={card.id}
                       disabled={disabled}
                       aria-pressed={isSelected}
-                      className={`transition-all group text-left rounded-md ${
+                      className={`transition-all group text-left rounded-md overflow-hidden ${
                         isCompact
                           ? 'w-full aspect-square p-1.5 flex items-center justify-center'
-                          : `w-full flex items-center gap-3 p-2.5 ${isSidebarCollapsed ? 'justify-center' : ''}`
+                          : `w-full flex items-center p-0 ${isSidebarCollapsed ? 'justify-center p-2.5' : ''}`
                       } ${
                         isSelected
-                          ? 'bg-white/10 ring-1 ring-[#C5AEF6]/40'
-                          : 'hover:bg-white/5 active:bg-white/10'
+                          ? (isCompact || sidebarCollapsed) ? '' : 'bg-transparent ring-0'
+                          : (isCompact || sidebarCollapsed) ? '' : 'hover:bg-white/5 active:bg-white/10 p-2.5 gap-3'
                       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                       title={card.name}
-                      onClick={() => {
+                      style={{
+                        '--tw-ring-color': isSelected ? 'var(--workspace-card-ring)' : undefined,
+                        height: (!isCompact && !sidebarCollapsed && isSelected) ? '120px' : 'auto'
+                      } as React.CSSProperties}
+                      onClick={(e) => {
+                        e.stopPropagation();
                         if (disabled) return;
                         onToggleWeatherId(card.id);
                         requestAnimationFrame(() => {
@@ -396,23 +487,42 @@ export function BananaWorkspaceDialog({
                       }}
                     >
                       <div
-                        className={`relative rounded-md overflow-hidden flex-shrink-0 bg-[#27272a] shadow-sm transition-shadow ${
-                          isCompact ? 'w-12 h-12' : 'w-9 h-9'
+                        className={`relative rounded-md overflow-hidden flex-shrink-0 bg-[var(--workspace-card-bg)] shadow-sm transition-all ${
+                          isCompact ? 'w-12 h-12' : (isSelected && !sidebarCollapsed ? 'w-full h-full rounded-none' : 'w-9 h-9')
                         } ${
-                          isSelected ? 'ring-2 ring-[#C5AEF6]/60' : 'group-hover:shadow-md'
+                          isSelected && !sidebarCollapsed && !isCompact ? '' : (isSelected ? 'ring-2 ring-opacity-60' : 'group-hover:shadow-md')
                         }`}
+                        style={{
+                          '--tw-ring-color': isSelected ? 'var(--workspace-card-ring)' : undefined
+                        } as React.CSSProperties}
                       >
                         <img
                           src={getCardImageSrc(card.name)}
                           alt={card.name}
-                          className="w-full h-full object-cover opacity-75 group-hover:opacity-100 transition-opacity"
+                          className={`w-full h-full object-cover transition-opacity ${
+                            isSelected && !sidebarCollapsed && !isCompact ? 'opacity-60' : 'opacity-75 group-hover:opacity-100'
+                          }`}
                           onError={(e) => {
                             const fb = getLocalIconSrc(card.name);
                             e.currentTarget.src = fb ?? makeSvgDataUrl(card.name);
                           }}
                         />
+                        {isSelected && !isCompact && !sidebarCollapsed && (
+                          <>
+                            <div className="absolute inset-0 bg-gradient-to-r from-black via-black/50 to-transparent"></div>
+                            <div className="absolute inset-0 p-5 flex flex-col justify-center items-start z-10">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="bg-[var(--brand-solid)] text-white text-[10px] px-1.5 py-0.5 rounded-sm font-medium tracking-widest shadow-sm">PRESET</span>
+                                <span className="text-white/40 text-[10px] font-mono tracking-widest">HQ</span>
+                              </div>
+                              <h3 className="text-2xl font-serif text-white leading-none mb-2 drop-shadow-lg">{card.name}</h3>
+                              <div className="w-8 h-0.5 bg-[var(--brand-primary)] mb-2 shadow-[0_0_4px_rgba(197,174,246,0.3)]"></div>
+                              <p className="text-[10px] text-white/60 font-mono tracking-widest">ID: {card.id}</p>
+                            </div>
+                          </>
+                        )}
                       </div>
-                      {!isCompact && !sidebarCollapsed && (
+                      {!isCompact && !sidebarCollapsed && !isSelected && (
                         <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                           <div className="text-sm text-white/80 group-hover:text-white truncate font-medium">
                             {card.name}
@@ -427,14 +537,17 @@ export function BananaWorkspaceDialog({
 
         {/* RIGHT: Main Content */}
         <div 
-          className="flex flex-col flex-1 min-w-0 h-full bg-[#18181b] transition-all duration-300 ease-in-out"
+          className="flex flex-col flex-1 min-w-0 h-full bg-[var(--workspace-bg-main)] transition-all duration-300 ease-in-out"
           style={{
             marginLeft: isCompact ? '180px' : '0'
           }}
         >
-          <div className="flex items-center justify-between gap-3 px-4 border-b border-[#27272a] bg-[#121214] min-h-[60px]">
+            <div className="banana-workspace-header flex items-center justify-between gap-3 px-4 border-b border-[var(--workspace-border)] bg-[var(--workspace-bg-header)]">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="text-sm text-white/80 font-medium truncate">{WEB_TITLE}</div>
+              <div className="flex items-center select-none group cursor-default">
+                <span className="text-lg font-black tracking-tight text-[var(--brand-solid)] group-hover:text-[var(--brand-primary)] transition-colors duration-300">Prompt</span>
+                <span className="text-lg font-light tracking-[0.2em] pod-text-white-sheen ml-1">LAB</span>
+              </div>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <button
@@ -473,18 +586,18 @@ export function BananaWorkspaceDialog({
               minHeight: isCompact ? 0 : 240
             }}
             transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            className="relative bg-[#09090b] overflow-hidden rounded-none"
+            className="relative bg-black overflow-hidden rounded-none"
             style={{ pointerEvents: isCompact ? 'none' : 'auto' }}
           >
             {iframeLoading && !iframeError && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-[#0F0D13]">
-                <div className="w-12 h-12 border-2 border-white/10 border-t-[#C5AEF6] rounded-full animate-spin mb-4"></div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-[var(--color-base-dark)]">
+                <div className="w-12 h-12 border-2 border-white/10 border-t-[var(--brand-primary)] rounded-full animate-spin mb-4"></div>
                 <div className="text-white/40 text-sm animate-pulse">Loading VividAI...</div>
               </div>
             )}
             
             {iframeError ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-[#0F0D13] p-8 text-center">
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-[var(--color-base-dark)] p-8 text-center">
                 <div className="text-red-400 mb-4 opacity-80"><AlertCircleIcon /></div>
                 <h3 className="text-white font-medium mb-2">Unable to load webpage</h3>
                 <p className="text-white/50 text-sm max-w-md mb-6">
@@ -501,14 +614,21 @@ export function BananaWorkspaceDialog({
               </div>
             ) : (
               <iframe 
-                src="https://p.vividai.com.cn/"
+                ref={iframeRef}
+                src={IFRAME_URL}
                 className="w-full border-none block"
                 style={{
                   height: 'calc(100% + 90px)',
                   marginTop: '-90px'
                 }}
                 title={WEB_TITLE}
-                onLoad={() => setIframeLoading(false)}
+                onLoad={() => {
+                  setIframeLoading(false);
+                  iframeWindowRef.current = iframeRef.current?.contentWindow ?? null;
+                  if (!initSentRef.current) {
+                    postInitToIframe();
+                  }
+                }}
                 onError={() => {
                   setIframeLoading(false);
                   setIframeError(true);
@@ -520,7 +640,7 @@ export function BananaWorkspaceDialog({
           </motion.div>
 
           {/* Bottom: PromptBar Area */}
-          <div className={`flex-none bg-[#18181b] relative z-20 ${isCompact ? '' : 'border-t border-[#27272a]'}`}>
+          <div className={`flex-none bg-[var(--workspace-bg-main)] relative z-20 ${isCompact ? '' : 'border-t border-[var(--workspace-border)]'}`}>
              <PromptBar
                 language={language}
                 setPrompt={setPrompt}
