@@ -844,6 +844,27 @@
   display: none;
 }
 
+/* Extremely fine vertical scrollbar for compact spaces */
+.pod-scrollbar-fine {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+.pod-scrollbar-fine::-webkit-scrollbar {
+  width: 3px;
+}
+.pod-scrollbar-fine::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+.pod-scrollbar-fine::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  transition: background 0.2s;
+}
+.pod-scrollbar-fine::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 .pod-chip-bg-2k {
   background-color: rgba(115, 58, 26, 0.28);
   backdrop-filter: blur(4px);

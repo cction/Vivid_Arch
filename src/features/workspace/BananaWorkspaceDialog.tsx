@@ -24,6 +24,18 @@ const ChevronLeftIcon = () => (
   </svg>
 );
 
+const ChevronDownIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9"></polyline>
+  </svg>
+);
+
+const ChevronUpIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="18 15 12 9 6 15"></polyline>
+  </svg>
+);
+
 const XIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -141,10 +153,22 @@ export function BananaWorkspaceDialog({
   onToggleWeatherId,
   ...promptBarProps 
 }: BananaWorkspaceDialogProps) {
+  const WEB_TITLE = 'Prompt Lab';
+  const COMPACT_KEY = 'BANANAPOD_WORKSPACE_COMPACT';
+
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isCompact, setIsCompact] = useState(() => {
+    try {
+      const raw = localStorage.getItem(COMPACT_KEY);
+      return raw === '1';
+    } catch {
+      return false;
+    }
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [iframeLoading, setIframeLoading] = useState(true);
   const [iframeError, setIframeError] = useState(false);
+  const sidebarCollapsed = isCompact ? false : isSidebarCollapsed;
 
   // Handle ESC key
   useEffect(() => {
@@ -221,6 +245,14 @@ export function BananaWorkspaceDialog({
     }
   }, [open]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(COMPACT_KEY, isCompact ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [isCompact]);
+
   const t = (key: string) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (translations[language as keyof typeof translations] as any)?.[key] || key;
@@ -235,42 +267,55 @@ export function BananaWorkspaceDialog({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-8">
+        <div
+          className={`fixed inset-0 z-[100] flex items-end justify-center p-4 pb-8 ${
+            isCompact ? 'pointer-events-none bg-transparent' : 'bg-black/80 backdrop-blur-sm'
+          }`}
+        >
           {/* Main Container with Animation */}
           <motion.div
+            layout
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} // Smooth ease-out curve
-            className="relative flex overflow-hidden rounded-xl bg-[#18181b] transition-all duration-300 border border-[#27272a] shadow-xl"
+            transition={{ 
+              duration: 0.4, 
+              ease: [0.16, 1, 0.3, 1],
+              layout: { duration: 0.4, ease: [0.16, 1, 0.3, 1] }
+            }} 
+            className="relative flex overflow-hidden rounded-xl bg-[#18181b] border border-[#27272a] shadow-xl pointer-events-auto"
             style={{
-              width: 'min(96vw, 1440px)',
-              height: 'min(90vh, 860px)'
+              width: isCompact ? 'min(92vw, 1080px)' : 'min(96vw, 1440px)',
+              height: isCompact ? 'auto' : 'min(90vh, 860px)',
+              maxHeight: isCompact ? '60vh' : '90vh'
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Close Button */}
-            <button 
-              onClick={onClose}
-              className="absolute top-4 right-4 z-50 p-2 text-white/40 hover:text-white bg-black/20 hover:bg-black/50 rounded-lg transition-all backdrop-blur-md"
-              title={t('close') || 'Close'}
-            >
-              <XIcon />
-            </button>
-
             {/* LEFT: Sidebar */}
-            <div 
-              className="flex flex-col border-r border-[#27272a] bg-[#121214] transition-all duration-300 ease-in-out relative"
-              style={{ width: isSidebarCollapsed ? '64px' : '220px', cursor: isSidebarCollapsed ? 'pointer' : 'default' }}
+            <motion.div 
+              layout="position"
+              className="flex flex-col border-r border-[#27272a] bg-[#121214] z-10"
+              initial={false}
+              animate={{
+                width: isCompact ? 180 : (sidebarCollapsed ? 64 : 220)
+              }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              style={{
+                cursor: isCompact ? 'default' : sidebarCollapsed ? 'pointer' : 'default',
+                position: isCompact ? 'absolute' : 'relative',
+                height: '100%',
+                left: 0,
+                top: 0
+              }}
               onClick={() => {
-                if (isSidebarCollapsed) {
+                if (!isCompact && sidebarCollapsed) {
                   setIsSidebarCollapsed(false);
                 }
               }}
             >
               {/* Sidebar Header */}
               <div className="flex flex-col p-3 border-b border-[#27272a] bg-[#121214] min-h-[60px] justify-center">
-                {!isSidebarCollapsed ? (
+                {!sidebarCollapsed ? (
                   <div className="flex items-center gap-2">
                     <div className="relative group flex-1">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-white/30 group-focus-within:text-white/60 transition-colors">
@@ -285,15 +330,18 @@ export function BananaWorkspaceDialog({
                         onClick={(e) => e.stopPropagation()}
                       />
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsSidebarCollapsed(true);
-                      }}
-                      className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/5 transition-colors flex-shrink-0"
-                    >
-                      <ChevronLeftIcon />
-                    </button>
+                    {!isCompact && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSidebarCollapsed(true);
+                        }}
+                        className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/5 transition-colors flex-shrink-0"
+                        aria-label="Collapse sidebar"
+                      >
+                        <ChevronLeftIcon />
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-3">
@@ -311,62 +359,123 @@ export function BananaWorkspaceDialog({
                 )}
               </div>
 
-          {/* Sidebar List */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1 custom-scrollbar">
-            {filteredCards.map((card) => {
-              const isSelected = promptBarProps.selectedWeatherId === card.id;
-              const disabled = promptBarProps.isLoading;
-              return (
+              {/* Sidebar List */}
+              <div
+                className={`flex-1 overflow-y-auto overflow-x-hidden p-3 pod-scrollbar-fine ${
+                  isCompact ? 'grid grid-cols-3 gap-2 content-start' : 'space-y-1'
+                }`}
+              >
+                {filteredCards.map((card) => {
+                  const isSelected = promptBarProps.selectedWeatherId === card.id;
+                  const disabled = promptBarProps.isLoading;
+
+                  return (
+                    <button
+                      key={card.id}
+                      disabled={disabled}
+                      aria-pressed={isSelected}
+                      className={`transition-all group text-left rounded-md ${
+                        isCompact
+                          ? 'w-full aspect-square p-1.5 flex items-center justify-center'
+                          : `w-full flex items-center gap-3 p-2.5 ${isSidebarCollapsed ? 'justify-center' : ''}`
+                      } ${
+                        isSelected
+                          ? 'bg-white/10 ring-1 ring-[#C5AEF6]/40'
+                          : 'hover:bg-white/5 active:bg-white/10'
+                      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      title={card.name}
+                      onClick={() => {
+                        if (disabled) return;
+                        onToggleWeatherId(card.id);
+                        requestAnimationFrame(() => {
+                          const el = document.querySelector(
+                            'textarea.pod-prompt-textarea'
+                          ) as HTMLTextAreaElement | null;
+                          el?.focus();
+                        });
+                      }}
+                    >
+                      <div
+                        className={`relative rounded-md overflow-hidden flex-shrink-0 bg-[#27272a] shadow-sm transition-shadow ${
+                          isCompact ? 'w-12 h-12' : 'w-9 h-9'
+                        } ${
+                          isSelected ? 'ring-2 ring-[#C5AEF6]/60' : 'group-hover:shadow-md'
+                        }`}
+                      >
+                        <img
+                          src={getCardImageSrc(card.name)}
+                          alt={card.name}
+                          className="w-full h-full object-cover opacity-75 group-hover:opacity-100 transition-opacity"
+                          onError={(e) => {
+                            const fb = getLocalIconSrc(card.name);
+                            e.currentTarget.src = fb ?? makeSvgDataUrl(card.name);
+                          }}
+                        />
+                      </div>
+                      {!isCompact && !sidebarCollapsed && (
+                        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                          <div className="text-sm text-white/80 group-hover:text-white truncate font-medium">
+                            {card.name}
+                          </div>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+        </motion.div>
+
+        {/* RIGHT: Main Content */}
+        <div 
+          className="flex flex-col flex-1 min-w-0 h-full bg-[#18181b] transition-all duration-300 ease-in-out"
+          style={{
+            marginLeft: isCompact ? '180px' : '0'
+          }}
+        >
+          <div className="flex items-center justify-between gap-3 px-4 border-b border-[#27272a] bg-[#121214] min-h-[60px]">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-sm text-white/80 font-medium truncate">{WEB_TITLE}</div>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <button
-                key={card.id}
-                disabled={disabled}
-                aria-pressed={isSelected}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-md transition-all group text-left ${
-                  isSidebarCollapsed ? 'justify-center' : ''
-                } ${
-                  isSelected ? 'bg-white/10 ring-1 ring-[#C5AEF6]/40' : 'hover:bg-white/5 active:bg-white/10'
-                } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title={card.name}
                 onClick={() => {
-                  if (disabled) return;
-                  onToggleWeatherId(card.id);
+                  setIsCompact((v) => !v);
                   requestAnimationFrame(() => {
                     const el = document.querySelector('textarea.pod-prompt-textarea') as HTMLTextAreaElement | null;
                     el?.focus();
                   });
                 }}
+                className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/5 transition-colors"
+                aria-label={isCompact ? 'Expand webpage' : 'Collapse webpage'}
+                aria-expanded={!isCompact}
+                title={isCompact ? 'Expand' : 'Collapse'}
               >
-                <div
-                  className={`relative w-9 h-9 rounded-md overflow-hidden flex-shrink-0 bg-[#27272a] shadow-sm transition-shadow ${
-                    isSelected ? 'ring-2 ring-[#C5AEF6]/60' : 'group-hover:shadow-md'
-                  }`}
-                >
-                   <img 
-                     src={getCardImageSrc(card.name)} 
-                     alt={card.name}
-                     className="w-full h-full object-cover opacity-75 group-hover:opacity-100 transition-opacity"
-                     onError={(e) => {
-                        const fb = getLocalIconSrc(card.name);
-                        e.currentTarget.src = fb ?? makeSvgDataUrl(card.name);
-                     }}
-                   />
-                </div>
-                {!isSidebarCollapsed && (
-                  <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                    <div className="text-sm text-white/80 group-hover:text-white truncate font-medium">{card.name}</div>
-                    {/* <div className="text-[10px] text-white/40 group-hover:text-white/50 truncate font-mono">{card.value}</div> */}
-                  </div>
-                )}
+                {isCompact ? <ChevronUpIcon /> : <ChevronDownIcon />}
               </button>
-              );
-            })}
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/5 transition-colors"
+                title={t('close') || 'Close'}
+                aria-label={t('close') || 'Close'}
+              >
+                <XIcon />
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* RIGHT: Main Content */}
-        <div className="flex flex-col flex-1 min-w-0 h-full bg-[#18181b]">
           {/* Top: Iframe Area */}
-          <div className="flex-1 relative min-h-[240px] bg-[#09090b] overflow-hidden rounded-none">
+          <motion.div
+            initial={false}
+            animate={{
+              height: isCompact ? 0 : 'auto',
+              opacity: isCompact ? 0 : 1,
+              flexGrow: isCompact ? 0 : 1,
+              minHeight: isCompact ? 0 : 240
+            }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="relative bg-[#09090b] overflow-hidden rounded-none"
+            style={{ pointerEvents: isCompact ? 'none' : 'auto' }}
+          >
             {iframeLoading && !iframeError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-[#0F0D13]">
                 <div className="w-12 h-12 border-2 border-white/10 border-t-[#C5AEF6] rounded-full animate-spin mb-4"></div>
@@ -398,7 +507,7 @@ export function BananaWorkspaceDialog({
                   height: 'calc(100% + 90px)',
                   marginTop: '-90px'
                 }}
-                title="VividAI Web"
+                title={WEB_TITLE}
                 onLoad={() => setIframeLoading(false)}
                 onError={() => {
                   setIframeLoading(false);
@@ -408,10 +517,10 @@ export function BananaWorkspaceDialog({
                 allow="clipboard-write *; clipboard-read *; fullscreen *"
               />
             )}
-          </div>
+          </motion.div>
 
           {/* Bottom: PromptBar Area */}
-          <div className="flex-none bg-[#18181b] border-t border-[#27272a] relative z-20">
+          <div className={`flex-none bg-[#18181b] relative z-20 ${isCompact ? '' : 'border-t border-[#27272a]'}`}>
              <PromptBar
                 language={language}
                 setPrompt={setPrompt}
