@@ -30,9 +30,14 @@
   --color-banana-dark: #3b2f1e;
 
   /* --- Semantic Colors --- */
+  --color-workspace-base: #1A191F;
+  --color-workspace-dark: #141419;
+
   --bg-page: var(--color-base-dark);
   --bg-component: var(--color-base-dark-alpha); /* Glassy component background */
   --bg-component-solid: var(--color-base-solid);
+
+  --bg-prompt-bar: var(--color-workspace-base);
   
   --text-heading: var(--color-neutral-white);
   --text-primary: var(--color-neutral-100);
@@ -82,8 +87,8 @@
   --banana-header-height: 48px;
   
   /* --- Workspace Theme --- */
-  --workspace-bg-sidebar: #161618;
-  --workspace-bg-main: #1c1c1f;
+  --workspace-bg-sidebar: var(--color-workspace-dark);
+  --workspace-bg-main: var(--color-workspace-base);
   --workspace-bg-header: var(--workspace-bg-sidebar);
   --workspace-border: rgba(255, 255, 255, 0.08);
   --workspace-input-bg: rgba(255, 255, 255, 0.05);
@@ -725,6 +730,19 @@
 .pod-menu-item:hover {
   background-color: rgba(255, 255, 255, 0.08);
   color: var(--text-heading);
+}
+
+.pod-menu-item-multiline {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.5;
+  width: 100%;
 }
 
 .pod-list-item {
@@ -1527,7 +1545,7 @@
 }
 /* Prompt Bar Styles */
 .pod-prompt-bar {
-  background-color: var(--bg-component); /* Match other bars */
+  background-color: var(--bg-prompt-bar); /* Match other bars */
   border: 1px solid var(--border-color);
   box-shadow: 0 20px 40px -10px rgba(0,0,0,0.6);
   backdrop-filter: blur(24px); /* backdrop-blur-xl */
@@ -1581,7 +1599,7 @@
 .pod-prompt-menu-overlay {
   position: fixed;
   z-index: 10000;
-  background-color: var(--bg-component-solid);
+  background-color: var(--bg-prompt-bar);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   box-shadow: var(--shadow-xl, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04));
@@ -1590,23 +1608,30 @@
 }
 
 .pod-menu-panel {
-  background-color: var(--bg-component-solid);
+  background-color: var(--bg-prompt-bar);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   box-shadow: var(--shadow-xl);
-  padding: 8px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  font-size: 0.875rem;
+  overflow-x: hidden;
 }
 
 .pod-menu-header {
-  padding: 4px 8px 8px;
+  padding: 2px 8px 4px;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-secondary);
+}
+
+.pod-menu-panel .pod-menu-item {
+  padding: 7px 8px;
+  line-height: 1.55;
 }
 
 .pod-prompt-menu-item-row {
@@ -1668,7 +1693,7 @@
   height: 36px; /* h-9 */
   padding: 0 12px; /* px-3 */
   border-radius: 12px; /* rounded-xl */
-  background-color: var(--bg-component);
+  background-color: var(--bg-prompt-bar);
   border: 1px solid var(--border-color);
   font-size: 0.75rem; /* text-xs */
   font-weight: 500;
@@ -1689,7 +1714,7 @@
 /* Size Selector */
 .pod-segmented-control {
   display: flex;
-  background-color: var(--bg-component);
+  background-color: var(--bg-prompt-bar);
   border-radius: 12px;
   border: 1px solid var(--border-color);
   height: 36px;

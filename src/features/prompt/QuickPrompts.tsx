@@ -76,19 +76,20 @@ export const QuickPrompts: React.FC<QuickPromptsProps> = ({ t, language, setProm
                                     <MenuItem
                                         key={`recent-${index}`}
                                         onClick={() => handleSelect(prompt)}
-                                        className="block w-full text-left truncate"
+                                        className="w-full text-left"
+                                        title={prompt}
                                     >
-                                        {prompt}
+                                        <span className="pod-menu-item-multiline block">{prompt}</span>
                                     </MenuItem>
                                 ))}
-                                <div className="my-2 -mx-2 border-t border-[var(--border-color)]"></div>
+                                <div className="my-1.5 -mx-2 border-t border-[var(--border-color)]"></div>
                             </>
                         )}
                         <h4 className="pod-menu-header">{t('myEffects.title')}</h4>
                         {userEffects.length > 0 ? (
                             userEffects.map((effect) => (
-                                <div key={effect.id} className="group flex items-center justify-between p-2 pod-list-item text-sm">
-                                    <button onClick={() => handleSelect(effect.value)} className="flex-grow text-left truncate">
+                                <div key={effect.id} className="group flex items-center justify-between p-1.5 pod-list-item text-sm">
+                                    <button onClick={() => handleSelect(effect.value)} className="flex-grow text-left pod-menu-item-multiline" title={effect.name}>
                                         {effect.name}
                                     </button>
                                     <IconButton
@@ -103,7 +104,7 @@ export const QuickPrompts: React.FC<QuickPromptsProps> = ({ t, language, setProm
                         ) : (
                             <p className="px-2 pb-2 text-xs text-[var(--text-secondary)]">{t('myEffects.noEffects')}</p>
                         )}
-                        <div className="my-2 -mx-2 border-t border-[var(--border-color)]"></div>
+                        <div className="my-1.5 -mx-2 border-t border-[var(--border-color)]"></div>
                         {builtInPrompts.map((item, index) => (
                             <MenuItem 
                                 key={index} 

@@ -6,6 +6,7 @@ export interface MenuItemProps extends React.ButtonHTMLAttributes<HTMLButtonElem
   onClick?: React.MouseEventHandler<HTMLButtonElement>;
   key?: React.Key;
   style?: React.CSSProperties;
+  title?: string;
 }
 
 export function MenuItem({ className, children, ...rest }: MenuItemProps) {

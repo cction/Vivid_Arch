@@ -643,7 +643,10 @@ export function BananaWorkspaceDialog({
           </motion.div>
 
           {/* Bottom: PromptBar Area */}
-          <div className={`flex-none bg-[var(--workspace-bg-main)] relative z-20 ${isCompact ? '' : 'border-t border-[var(--workspace-border)]'}`}>
+          <div
+            className={`flex-none relative z-20 ${isCompact ? '' : 'border-t border-[var(--workspace-border)]'}`}
+            style={{ backgroundColor: 'var(--bg-prompt-bar)' }}
+          >
              <PromptBar
                 language={language}
                 setPrompt={setPrompt}
