@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QuickPrompts } from './QuickPrompts';
+import { useRecentPrompts } from '@/hooks/useRecentPrompts';
 import { Chip, IconButton, Textarea } from '../../ui';
 import type { UserEffect, GenerationMode } from '@/types';
 import { getWeatherPresetById } from '@/i18n/translations';
@@ -244,6 +245,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
     noBorder,
     selectedWeatherId
 }) => {
+    const { recentPrompts, addRecentPrompt } = useRecentPrompts();
     const [isExpanded, setIsExpanded] = useState(forceExpanded || false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
@@ -252,6 +254,9 @@ export const PromptBar: React.FC<PromptBarProps> = ({
         if (isLoading) {
             onCancelGenerate();
         } else if (prompt.trim() || selectedWeatherId) {
+            if (prompt.trim()) {
+                addRecentPrompt(prompt);
+            }
             onGenerate();
         }
     };
@@ -532,6 +537,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                         disabled={!isSelectionActive || isLoading}
                                         userEffects={userEffects}
                                         onDeleteUserEffect={onDeleteUserEffect}
+                                        recentPrompts={recentPrompts}
                                         className="pod-circle-button"
                                     />
                                     {/* Mode Switcher */}
@@ -574,7 +580,7 @@ export const PromptBar: React.FC<PromptBarProps> = ({
                                     setPrompt={setPrompt}
                                     selectedWeatherId={selectedWeatherId}
                                     onRemoveWeatherId={onRemoveWeatherId}
-                                    onGenerate={onGenerate}
+                                    onGenerate={handleGenerateClick}
                                     isLoading={isLoading}
                                     placeholder={getPlaceholderText()}
                                     textareaPadding={textareaPadding}

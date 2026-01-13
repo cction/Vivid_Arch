@@ -32,6 +32,7 @@ import { useElementOps } from '@/hooks/useElementOps';
 import { useCanvasCoords } from '@/hooks/useCanvasCoords';
 import { getDrawResultOnce, GrsaiResult } from '@/services/api/grsaiService';
 import { loadImageWithFallback } from '@/utils/image';
+import { sanitizeErrorMessage } from '@/utils/sanitizeErrorMessage';
 import { PodUIPreview } from '@/components/PodUIPreview';
 import { PodButton } from '@/components/podui';
 import { getElementBounds } from '@/utils/canvas';
@@ -472,7 +473,7 @@ const App: React.FC = () => {
                          return e;
                      }));
                  } catch (loadErr) {
-                     const msg = loadErr instanceof Error ? loadErr.message : String(loadErr);
+                     const msg = sanitizeErrorMessage(loadErr);
                      commitAction(prev => prev.map(e => {
                          if (e.id === elementId) {
                              return { ...e, genStatus: 'failed', genError: `Failed to load generated image: ${msg}`, isGenerating: undefined } as ImageElement;
@@ -487,7 +488,7 @@ const App: React.FC = () => {
                         if (result.status === 'failed') {
                             const errText = (result.error || result.textResponse || '').trim();
                             base.genStatus = 'failed';
-                            base.genError = errText || '生成失败（服务返回 failed）';
+                            base.genError = sanitizeErrorMessage(errText || '生成失败（服务返回 failed）');
                             const isExplicitServerFailed = (result.textResponse || '').startsWith('图像生成失败：')
                             base.genRetryDisabled = isExplicitServerFailed ? true : undefined;
                             base.isGenerating = undefined;
@@ -496,7 +497,7 @@ const App: React.FC = () => {
                             base.genRetryDisabled = undefined;
                             base.isGenerating = undefined;
                             const infoText = (result.error || result.textResponse || '').trim();
-                            if (infoText) base.genError = infoText;
+                            if (infoText) base.genError = sanitizeErrorMessage(infoText);
                             else base.genError = (result.status === 'timeout') ? '获取结果超时' : '仍在生成中，请稍后重试';
                         }
                         return base;
@@ -506,7 +507,7 @@ const App: React.FC = () => {
             }
 
         } catch (err) {
-             const msg = err instanceof Error ? err.message : String(err);
+             const msg = sanitizeErrorMessage(err);
              commitAction(prev => prev.map(e => {
                 if (e.id === elementId) {
                     return { ...e, genStatus: 'failed', genError: msg, isGenerating: undefined } as ImageElement;

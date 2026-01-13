@@ -1,0 +1,400 @@
+<html lang="en"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cinema Archive Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&amp;display=swap" rel="stylesheet">
+    <style>
+      /* Custom Scrollbar Hide */
+      .no-scrollbar::-webkit-scrollbar {
+      display: none;
+      }
+      .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+      }
+      /* Vertical Writing Mode for Spines (Legacy support) */
+      .vertical-text {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      }
+      /* 3D VHS Effect */
+      .vhs-scene {
+      perspective: 1000px;
+      }
+      .vhs-case {
+      transform-style: preserve-3d;
+      transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      }
+      /* Active item styling for stack */
+      .vhs-case.active {
+      transform: scale(1.02) translateZ(10px);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      z-index: 50;
+      }
+      /* Vertical mask for stack */
+      .mask-edges-vertical {
+      mask-image: linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%);
+      }
+      /* Distress Texture Overlay */
+      .distress {
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.15'/%3E%3C/svg%3E");
+      mix-blend-mode: overlay;
+      pointer-events: none;
+      }
+    </style>
+    <style>
+      /* 3D Transform utilities */
+    </style>
+    <script>
+      // Configure Tailwind to include our custom 3D transform utilities
+      tailwind.config = {
+      theme: {
+      extend: {
+      // Add any custom theme extensions here if needed
+      }
+      },
+      plugins: [
+      function({ addUtilities }) {
+      const rotateXUtilities = {};
+      const rotateYUtilities = {};
+      const rotateZUtilities = {};
+      const rotateValues = [0, 5, 10, 15, 20, 30, 45, 75];
+      // Generate rotate-x utilities
+      rotateValues.forEach((value) => {
+      rotateXUtilities[`.rotate-x-${value}`] = {
+      '--tw-rotate-x': `${value}deg`,
+      transform: `
+      translate3d(var(--tw-translate-x, 0), var(--tw-translate-y, 0), var(--tw-translate-z, 0))
+      rotateX(var(--tw-rotate-x, 0))
+      rotateY(var(--tw-rotate-y, 0))
+      rotateZ(var(--tw-rotate-z, 0))
+      skewX(var(--tw-skew-x, 0))
+      skewY(var(--tw-skew-y, 0))
+      scaleX(var(--tw-scale-x, 1))
+      scaleY(var(--tw-scale-y, 1))
+      `.replace(/\\s+/g, ' ').trim(),
+      };
+      if (value !== 0) {
+      rotateXUtilities[`.-rotate-x-${value}`] = {
+      '--tw-rotate-x': `-${value}deg`,
+      transform: `
+      translate3d(var(--tw-translate-x, 0), var(--tw-translate-y, 0), var(--tw-translate-z, 0))
+      rotateX(var(--tw-rotate-x, 0))
+      rotateY(var(--tw-rotate-y, 0))
+      rotateZ(var(--tw-rotate-z, 0))
+      skewX(var(--tw-skew-x, 0))
+      skewY(var(--tw-skew-y, 0))
+      scaleX(var(--tw-scale-x, 1))
+      scaleY(var(--tw-scale-y, 1))
+      `.replace(/\\s+/g, ' ').trim(),
+      };
+      }
+      });
+      // Generate rotate-y utilities
+      rotateValues.forEach((value) => {
+      rotateYUtilities[`.rotate-y-${value}`] = {
+      '--tw-rotate-y': `${value}deg`,
+      transform: `
+      translate3d(var(--tw-translate-x, 0), var(--tw-translate-y, 0), var(--tw-translate-z, 0))
+      rotateX(var(--tw-rotate-x, 0))
+      rotateY(var(--tw-rotate-y, 0))
+      rotateZ(var(--tw-rotate-z, 0))
+      skewX(var(--tw-skew-x, 0))
+      skewY(var(--tw-skew-y, 0))
+      scaleX(var(--tw-scale-x, 1))
+      scaleY(var(--tw-scale-y, 1))
+      `.replace(/\\s+/g, ' ').trim(),
+      };
+      if (value !== 0) {
+      rotateYUtilities[`.-rotate-y-${value}`] = {
+      '--tw-rotate-y': `-${value}deg`,
+      transform: `
+      translate3d(var(--tw-translate-x, 0), var(--tw-translate-y, 0), var(--tw-translate-z, 0))
+      rotateX(var(--tw-rotate-x, 0))
+      rotateY(var(--tw-rotate-y, 0))
+      rotateZ(var(--tw-rotate-z, 0))
+      skewX(var(--tw-skew-x, 0))
+      skewY(var(--tw-skew-y, 0))
+      scaleX(var(--tw-scale-x, 1))
+      scaleY(var(--tw-scale-y, 1))
+      `.replace(/\\s+/g, ' ').trim(),
+      };
+      }
+      });
+      // Generate rotate-z utilities
+      rotateValues.forEach((value) => {
+      rotateZUtilities[`.rotate-z-${value}`] = {
+      '--tw-rotate-z': `${value}deg`,
+      transform: `
+      translate3d(var(--tw-translate-x, 0), var(--tw-translate-y, 0), var(--tw-translate-z, 0))
+      rotateX(var(--tw-rotate-x, 0))
+      rotateY(var(--tw-rotate-y, 0))
+      rotateZ(var(--tw-rotate-z, 0))
+      skewX(var(--tw-skew-x, 0))
+      skewY(var(--tw-skew-y, 0))
+      scaleX(var(--tw-scale-x, 1))
+      scaleY(var(--tw-scale-y, 1))
+      `.replace(/\\s+/g, ' ').trim(),
+      };
+      if (value !== 0) {
+      rotateZUtilities[`.-rotate-z-${value}`] = {
+      '--tw-rotate-z': `-${value}deg`,
+      transform: `
+      translate3d(var(--tw-translate-x, 0), var(--tw-translate-y, 0), var(--tw-translate-z, 0))
+      rotateX(var(--tw-rotate-x, 0))
+      rotateY(var(--tw-rotate-y, 0))
+      rotateZ(var(--tw-rotate-z, 0))
+      skewX(var(--tw-skew-x, 0))
+      skewY(var(--tw-skew-y, 0))
+      scaleX(var(--tw-scale-x, 1))
+      scaleY(var(--tw-scale-y, 1))
+      `.replace(/\\s+/g, ' ').trim(),
+      };
+      }
+      });
+      // Perspective utilities
+      const perspectiveUtilities = {
+      ".perspective-none": { perspective: "none" },
+      ".perspective-dramatic": { perspective: "100px" },
+      ".perspective-near": { perspective: "300px" },
+      ".perspective-normal": { perspective: "500px" },
+      ".perspective-midrange": { perspective: "800px" },
+      ".perspective-distant": { perspective: "1200px" },
+      };
+      // Transform style utilities
+      const transformStyleUtilities = {
+      ".transform-style-preserve-3d": { "transform-style": "preserve-3d" },
+      ".transform-style-flat": { "transform-style": "flat" },
+      };
+      addUtilities({
+      ...rotateXUtilities,
+      ...rotateYUtilities,
+      ...rotateZUtilities,
+      ...perspectiveUtilities,
+      ...transformStyleUtilities,
+      });
+      }
+      ]
+      };
+    </script>
+  </head>
+  <body class="bg-zinc-950 text-zinc-300 font-sans antialiased min-h-screen flex flex-col selection:bg-red-900 selection:text-white overflow-hidden">
+    <!-- Header -->
+    <header class="w-full px-8 py-6 flex justify-between items-center z-20 relative border-b border-zinc-900/50">
+      <button class="group flex items-center gap-3 text-xs tracking-widest hover:text-white transition-colors">
+        <div class="border border-zinc-700 px-2 py-1 rounded group-hover:border-zinc-500 transition-colors">
+          BACK
+        </div>
+        <span class="opacity-60 text-[10px]">ARCHIVE VIEW</span>
+      </button>
+
+      <div class="flex flex-col items-center text-center">
+        <h1 class="text-sm tracking-[0.2em] text-zinc-100 font-medium">
+          <span class="text-red-600 font-serif italic pr-1">The</span>
+          YAMAMOTO
+          <span class="text-zinc-500 text-[10px] block mt-1 tracking-widest">
+            COLLECTION
+          </span>
+        </h1>
+      </div>
+
+      <div class="text-xs tracking-widest opacity-60">CAREER 1950 — 1998</div>
+    </header>
+
+    <!-- Filter Navigation -->
+    <nav class="w-full flex justify-center py-8 z-20 relative">
+      <div class="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-lg backdrop-blur-sm border border-zinc-800/50">
+        <button class="px-4 py-1.5 text-xs bg-zinc-100 text-zinc-950 font-medium rounded shadow-sm transition-all">
+          ALL
+        </button>
+        <button class="px-4 py-1.5 text-xs hover:bg-zinc-800 hover:text-white transition-all rounded text-zinc-500">
+          1950s
+        </button>
+        <button class="px-4 py-1.5 text-xs hover:bg-zinc-800 hover:text-white transition-all rounded text-zinc-500">
+          1960s
+        </button>
+        <button class="px-4 py-1.5 text-xs hover:bg-zinc-800 hover:text-white transition-all rounded text-zinc-500">
+          1970s
+        </button>
+        <button class="px-4 py-1.5 text-xs hover:bg-zinc-800 hover:text-white transition-all rounded text-zinc-500">
+          1980s
+        </button>
+      </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 relative flex flex-col justify-center items-center w-full perspective-container">
+      <!-- Carousel/Grid -->
+      <div class="relative w-full h-[65vh] flex flex-col items-center gap-2 py-12 overflow-y-auto no-scrollbar scroll-smooth mask-edges-vertical" id="gallery-container">
+        <!-- Items injected via JS -->
+      </div>
+
+      <!-- Info Footer (Dynamic) -->
+      <div class="absolute bottom-0 left-0 w-full pb-8 pt-12 bg-gradient-to-t from-zinc-950 via-zinc-950/90 to-transparent z-30 flex flex-col items-center justify-end pointer-events-none">
+        <!-- Navigation Arrows -->
+        <div class="absolute right-8 top-1/2 -translate-y-1/2 flex flex-col gap-4 pointer-events-auto z-40">
+          <button class="p-3 rounded-full bg-zinc-900/50 hover:bg-zinc-800 transition text-zinc-400 hover:text-white border border-white/10" id="prev-btn">
+            <i data-lucide="arrow-up" class="w-5 h-5"></i>
+          </button>
+          <button class="p-3 rounded-full bg-zinc-900/50 hover:bg-zinc-800 transition text-zinc-400 hover:text-white border border-white/10" id="next-btn">
+            <i data-lucide="arrow-down" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Movie Details -->
+        <div class="text-center space-y-3 pointer-events-auto transition-all duration-500" id="info-panel">
+          <h2 class="text-4xl font-serif tracking-tight text-zinc-100" id="movie-title">
+            Shadows of the Ronin
+          </h2>
+          <div class="flex items-center justify-center gap-3 text-xs tracking-widest text-red-500/90">
+            <span id="movie-jp">浪人の影</span>
+            <span class="w-1 h-1 rounded-full bg-zinc-700"></span>
+            <span class="text-zinc-400" id="movie-year">1958</span>
+          </div>
+        </div>
+
+        <!-- Bottom Bar -->
+        <div class="w-full flex justify-between px-8 mt-12 text-[10px] tracking-widest text-zinc-600 uppercase">
+          <p>© Archive Rights Reserved.</p>
+          <div class="flex gap-4">
+            <span class="hover:text-zinc-400 cursor-pointer transition">
+              FB
+            </span>
+            <span class="hover:text-zinc-400 cursor-pointer transition">
+              TW
+            </span>
+            <span class="hover:text-zinc-400 cursor-pointer transition">
+              IG
+            </span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      // Initialize Icons
+      lucide.createIcons();
+
+      // Data
+      const movies = [
+          { id: 1, title: "High and Low", jp: "天国と地獄", year: "1963", color: "bg-blue-900", spineColor: "bg-blue-950", textColor: "text-blue-100", img: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=800&auto=format&fit=crop" },
+          { id: 2, title: "Red Beard", jp: "赤ひげ", year: "1965", color: "bg-red-950", spineColor: "bg-red-900", textColor: "text-red-100", img: "https://images.unsplash.com/photo-1596727147705-54a9d0993b78?q=80&w=800&auto=format&fit=crop" },
+          { id: 3, title: "Stray Dog", jp: "野良犬", year: "1949", color: "bg-amber-900", spineColor: "bg-amber-950", textColor: "text-amber-100", img: "https://images.unsplash.com/photo-1505691938895-1758d7feb511?q=80&w=800&auto=format&fit=crop" },
+          { id: 4, title: "Seven Samurai", jp: "七人の侍", year: "1954", color: "bg-zinc-800", spineColor: "bg-zinc-900", textColor: "text-white", img: "https://images.unsplash.com/photo-1509281373149-e957c629640d?q=80&w=800&auto=format&fit=crop" },
+          { id: 5, title: "Throne of Blood", jp: "蜘蛛巣城", year: "1957", color: "bg-red-700", spineColor: "bg-red-800", textColor: "text-white", img: "https://images.unsplash.com/photo-1535905557558-afc4877a26fc?q=80&w=800&auto=format&fit=crop" },
+          { id: 6, title: "Yojimbo", jp: "用心棒", year: "1961", color: "bg-emerald-900", spineColor: "bg-emerald-950", textColor: "text-emerald-100", img: "https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=800&auto=format&fit=crop" },
+          { id: 7, title: "Ran", jp: "乱", year: "1985", color: "bg-indigo-900", spineColor: "bg-indigo-950", textColor: "text-indigo-100", img: "https://images.unsplash.com/photo-1533613220913-1807f5812083?q=80&w=800&auto=format&fit=crop" },
+          { id: 8, title: "Dreams", jp: "夢", year: "1990", color: "bg-purple-900", spineColor: "bg-purple-950", textColor: "text-purple-100", img: "https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=800&auto=format&fit=crop" },
+          { id: 9, title: "Ikiru", jp: "生きる", year: "1952", color: "bg-stone-800", spineColor: "bg-stone-900", textColor: "text-stone-100", img: "https://images.unsplash.com/photo-1478720568477-152d9b164e63?q=80&w=800&auto=format&fit=crop" }
+      ];
+
+      let activeIndex = 3;
+
+      const container = document.getElementById('gallery-container');
+      const titleEl = document.getElementById('movie-title');
+      const jpEl = document.getElementById('movie-jp');
+      const yearEl = document.getElementById('movie-year');
+
+      function render() {
+          container.innerHTML = '';
+
+          movies.forEach((movie, index) => {
+              const isActive = index === activeIndex;
+
+              // Container
+              const item = document.createElement('div');
+              item.className = `
+                  relative cursor-pointer transition-all duration-500 ease-out group vhs-scene w-full flex justify-center
+                  ${isActive ? 'z-10 py-6 scale-100' : 'z-0 opacity-60 hover:opacity-90 grayscale hover:grayscale-0'}
+              `;
+              item.style.height = isActive ? '380px' : '70px';
+
+              item.onclick = () => {
+                  if (activeIndex !== index) {
+                      activeIndex = index;
+                      render();
+                      updateInfo();
+                      setTimeout(() => item.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                  }
+              };
+
+              const card = document.createElement('div');
+              card.className = `vhs-case relative shadow-2xl overflow-hidden ${isActive ? 'active rounded-md w-full max-w-4xl h-full' : 'rounded w-full max-w-2xl h-full'}`;
+
+              if (isActive) {
+                  card.innerHTML = `
+                      <div class="absolute inset-0 bg-zinc-900">
+                          <img src="${movie.img}" class="w-full h-full object-cover opacity-60" alt="${movie.title}">
+                          <div class="absolute inset-0 bg-gradient-to-r from-black via-black/50 to-transparent"></div>
+                          <div class="absolute inset-0 distress"></div>
+
+                          <div class="absolute inset-0 p-10 flex flex-col justify-center items-start z-10">
+                              <div class="flex items-center gap-3 mb-4">
+                                  <span class="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-sm font-medium tracking-widest">MASTERPIECE</span>
+                                  <span class="text-zinc-400 text-[10px] font-mono tracking-widest">VHS-HQ</span>
+                              </div>
+                              <h3 class="text-4xl md:text-6xl font-serif text-white leading-none mb-3 drop-shadow-lg">${movie.title.toUpperCase()}</h3>
+                              <div class="w-12 h-1 bg-red-600 mb-4"></div>
+                              <p class="text-sm text-zinc-300 font-mono tracking-widest">${movie.jp} // ${movie.year}</p>
+                          </div>
+                      </div>
+                  `;
+              } else {
+                  // Horizontal Spine
+                  card.innerHTML = `
+                      <div class="w-full h-full ${movie.spineColor} relative flex items-center justify-between px-6 border-t border-white/5 transition-colors">
+                          <div class="flex items-center gap-4 w-24">
+                              <div class="w-8 h-4 border border-white/20 flex items-center justify-center rounded-sm">
+                                  <span class="text-[8px] font-bold text-white/50">VHS</span>
+                              </div>
+                              <span class="text-xs font-mono text-white/30">${movie.year}</span>
+                          </div>
+                          <h4 class="text-sm md:text-lg font-medium tracking-[0.2em] uppercase ${movie.textColor} truncate text-center flex-1">
+                              ${movie.title}
+                          </h4>
+                          <div class="w-24 text-right">
+                              <span class="text-xs text-white/20 tracking-wider">${movie.jp}</span>
+                          </div>
+                          <div class="absolute inset-0 distress opacity-20"></div>
+                      </div>
+                  `;
+              }
+
+              item.appendChild(card);
+              container.appendChild(item);
+          });
+      }
+
+      function updateInfo() {
+          const movie = movies[activeIndex];
+          titleEl.textContent = movie.title;
+          jpEl.textContent = movie.jp;
+          yearEl.textContent = movie.year;
+      }
+
+      document.getElementById('prev-btn').addEventListener('click', () => {
+          if (activeIndex > 0) {
+              activeIndex--;
+              render();
+              updateInfo();
+          }
+      });
+
+      document.getElementById('next-btn').addEventListener('click', () => {
+          if (activeIndex < movies.length - 1) {
+              activeIndex++;
+              render();
+              updateInfo();
+          }
+      });
+
+      render();
+      updateInfo();
+    </script>
+  
+</body></html>

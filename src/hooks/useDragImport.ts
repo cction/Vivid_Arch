@@ -57,7 +57,7 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
     setError(null)
     try {
       const { dataUrl, mimeType } = await fileToDataUrl(file)
-      const resized = await resizeBase64ToMax(dataUrl, mimeType, 2048, 2048)
+      const resized = await resizeBase64ToMax(dataUrl, mimeType, 2560, 2560)
       const usedDataUrl = resized && resized.scale < 1 ? `data:${mimeType};base64,${resized.base64}` : dataUrl
       const dims = resized ? { width: resized.width, height: resized.height } : await getImageSize(dataUrl, mimeType)
       if (!dims || !dims.width || !dims.height) { setError('Failed to load image.'); return }
@@ -99,7 +99,7 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
         const mimeType = file.type || 'image/png'
         const size = await getImageSizeFromBlob(file)
         if (size && size.width && size.height) {
-          const scale = Math.min(2048 / size.width, 2048 / size.height, 1)
+          const scale = Math.min(2560 / size.width, 2560 / size.height, 1)
           const w = Math.max(1, Math.floor(size.width * scale))
           const h = Math.max(1, Math.floor(size.height * scale))
           analyzed++
@@ -109,7 +109,7 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
         const { dataUrl } = await fileToDataUrl(file)
         const s2 = await getImageSize(dataUrl, mimeType)
         if (!s2 || !s2.width || !s2.height) throw new Error('image load error')
-        const scale = Math.min(2048 / s2.width, 2048 / s2.height, 1)
+        const scale = Math.min(2560 / s2.width, 2560 / s2.height, 1)
         const w = Math.max(1, Math.floor(s2.width * scale))
         const h = Math.max(1, Math.floor(s2.height * scale))
         analyzed++
@@ -232,11 +232,11 @@ export function useDragImport({ svgRef, getCanvasPoint, setElements, setSelected
           setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: url } : el)))
         } else {
           if (it.dataUrl) {
-            const resized = await resizeBase64ToMax(it.dataUrl, it.mimeType, 2048, 2048)
+            const resized = await resizeBase64ToMax(it.dataUrl, it.mimeType, 2560, 2560)
             const used = resized && resized.scale < 1 ? `data:${it.mimeType};base64,${resized.base64}` : it.dataUrl
             setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: used } : el)))
           } else {
-            const resized = await resizeBlobToMax(it.file, it.mimeType, 2048, 2048)
+            const resized = await resizeBlobToMax(it.file, it.mimeType, 2560, 2560)
             const used = resized ? resized.dataUrl : undefined
             if (used) setElements(prev => prev.map(el => (el.id === newIds[idx] ? { ...el, href: used } : el)))
           }

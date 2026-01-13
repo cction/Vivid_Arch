@@ -1,4 +1,5 @@
 import { withRetry } from '@/utils/retry';
+import { sanitizeErrorMessage } from '@/utils/sanitizeErrorMessage';
 
 const WHATAI_BASE_URL = process.env.WHATAI_BASE_URL || 'https://api.whatai.cc';
 const WHATAI_API_KEY = process.env.WHATAI_API_KEY;
@@ -45,7 +46,10 @@ export async function whataiFetch(path: string, init: RequestInit): Promise<Resp
       throw e instanceof Error ? e : new Error(String(e));
     }
   }
-  if (!resp.ok) { const text = await resp.text().catch(() => ''); throw new Error(`whatai API Error: ${resp.status} ${resp.statusText} ${text}`); }
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(sanitizeErrorMessage(`whatai API Error: ${resp.status} ${resp.statusText} ${text}`));
+  }
   return resp;
 }
 

@@ -6,6 +6,7 @@ import { loadImageWithFallback, PLACEHOLDER_DATA_URL } from '@/utils/image'
 import { editImage as editImageWhatai, generateImageFromText as generateImageFromTextWhatai, generateVideo } from '@/services/api/geminiService'
 import { getUiRadiusLg } from '@/ui/standards'
 import { editImage as editImageGrsai, generateImageFromText as generateImageFromTextGrsai, type GrsaiResult } from '@/services/api/grsaiService'
+import { sanitizeErrorMessage } from '@/utils/sanitizeErrorMessage'
 
 type Deps = {
   svgRef: MutableRefObject<SVGSVGElement | null>
@@ -186,7 +187,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
     safeSetProgressMessage('Starting generation...')
     if (generationMode === 'video') {
       if (apiProvider === 'Grsai') {
-        safeSetError('当前提供方不支持视频生成，请切换到 WHATAI')
+        safeSetError('当前提供方不支持视频生成，请切换到支持视频的提供方')
         safeSetIsLoading(false)
         return
       }
@@ -236,7 +237,7 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
         video.src = videoUrl
       } catch (err) {
         const error = err as Error
-        safeSetError(`Video generation failed: ${error.message}`)
+        safeSetError(`视频生成失败: ${sanitizeErrorMessage(error)}`)
         console.error(err)
         safeSetIsLoading(false)
       }
@@ -400,7 +401,8 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
             }
           })
         } else {
-          const errorMsg = result.textResponse || (result as { error?: string }).error || 'Generation failed to produce an image.'
+          const rawErrorMsg = result.textResponse || (result as { error?: string }).error || 'Generation failed to produce an image.'
+          const errorMsg = sanitizeErrorMessage(rawErrorMsg, '生成失败')
           safeSetError(errorMsg)
           if (placeholderIdEdit) {
             safeCommitAction(prev => prev.map(el => {
@@ -507,7 +509,8 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
             }
           })
         } else {
-          const errorMsg = result.textResponse || (result as { error?: string }).error || 'Generation failed to produce an image.'
+          const rawErrorMsg = result.textResponse || (result as { error?: string }).error || 'Generation failed to produce an image.'
+          const errorMsg = sanitizeErrorMessage(rawErrorMsg, '生成失败')
           safeSetError(errorMsg)
           if (placeholderId) {
             safeCommitAction(prev => prev.map(el => {
@@ -533,11 +536,11 @@ export function useGenerationPipeline({ svgRef, getCanvasPoint, elementsRef, sel
       }
     } catch (err) {
       const error = err as Error
-      let friendlyMessage = `An error occurred during generation: ${error.message}`
+      let friendlyMessage = `生成失败: ${error.message}`
       if (error.message && (error.message.includes('429') || error.message.toUpperCase().includes('RESOURCE_EXHAUSTED'))) {
-        friendlyMessage = 'API quota exceeded. Please check your Google AI Studio plan and billing details, or try again later.'
+        friendlyMessage = 'API 配额不足或触发限流，请稍后重试'
       }
-      safeSetError(friendlyMessage)
+      safeSetError(sanitizeErrorMessage(friendlyMessage, '生成失败'))
       console.error(err)
     } finally {
       safeSetIsLoading(false)

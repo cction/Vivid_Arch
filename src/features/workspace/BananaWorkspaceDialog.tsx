@@ -155,7 +155,7 @@ export function BananaWorkspaceDialog({
 }: BananaWorkspaceDialogProps) {
   const WEB_TITLE = 'Prompt Lab';
   const COMPACT_KEY = 'BANANAPOD_WORKSPACE_COMPACT';
-  const IFRAME_URL = 'https://p.vividai.com.cn/';
+  const IFRAME_BASE_URL = 'https://p.vividai.com.cn/';
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const iframeWindowRef = useRef<Window | null>(null);
   const sessionIdRef = useRef<string>('');
@@ -173,6 +173,7 @@ export function BananaWorkspaceDialog({
   const [searchTerm, setSearchTerm] = useState('');
   const [iframeLoading, setIframeLoading] = useState(true);
   const [iframeError, setIframeError] = useState(false);
+  const [iframeUrl, setIframeUrl] = useState(IFRAME_BASE_URL);
   const sidebarCollapsed = isCompact ? false : isSidebarCollapsed;
 
   const createSessionId = () => {
@@ -188,7 +189,7 @@ export function BananaWorkspaceDialog({
 
   const getIframeOrigin = () => {
     try {
-      const src = iframeRef.current?.src || IFRAME_URL;
+      const src = iframeRef.current?.src || IFRAME_BASE_URL;
       return new URL(src).origin;
     } catch {
       return '';
@@ -325,6 +326,8 @@ export function BananaWorkspaceDialog({
       setIframeLoading(true);
       setIframeError(false);
       setSearchTerm('');
+      const ts = Date.now();
+      setIframeUrl(`${IFRAME_BASE_URL}?ts=${ts}`);
       const sid = createSessionId();
       sessionIdRef.current = sid;
       initSentRef.current = false;
@@ -615,7 +618,7 @@ export function BananaWorkspaceDialog({
             ) : (
               <iframe 
                 ref={iframeRef}
-                src={IFRAME_URL}
+                src={iframeUrl}
                 className="w-full border-none block"
                 style={{
                   height: 'calc(100% + 90px)',

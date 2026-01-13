@@ -1,4 +1,6 @@
 import { withRetry } from "@/utils/retry";
+import { preprocessUplinkImages } from "@/utils/uplinkPreprocess";
+import { sanitizeErrorMessage } from "@/utils/sanitizeErrorMessage";
 
 const WHATAI_BASE_URL = process.env.WHATAI_BASE_URL || 'https://api.whatai.cc';
 const WHATAI_API_KEY = process.env.WHATAI_API_KEY;
@@ -234,32 +236,6 @@ async function getBase64ImageSize(base64: string, mimeType?: string): Promise<{ 
   }
 }
 
-async function resizeBase64ToMax(base64: string, mimeType?: string, maxWidth = 2048, maxHeight = 2048): Promise<{ base64: string; width: number; height: number; scale: number } | null> {
-  const size = await getImageSize(base64, mimeType);
-  if (!size) return null;
-  const { width, height } = size;
-  const scale = Math.min(maxWidth / width, maxHeight / height, 1);
-  if (scale >= 1) return { base64, width, height, scale: 1 };
-  const targetW = Math.max(1, Math.floor(width * scale));
-  const targetH = Math.max(1, Math.floor(height * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = targetW;
-  canvas.height = targetH;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  const url = `data:${mimeType || 'image/png'};base64,${normalizeBase64(stripBase64Header(base64))}`;
-  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const i = new Image();
-    i.crossOrigin = 'anonymous';
-    i.onload = () => resolve(i);
-    i.onerror = () => reject(new Error('Failed to load image during resize'));
-    i.src = url;
-  });
-  ctx.drawImage(img, 0, 0, targetW, targetH);
-  const out = canvas.toDataURL(mimeType || 'image/png').split(',')[1] || base64;
-  return { base64: out, width: targetW, height: targetH, scale };
-}
-
   async function scaleBase64ByFactor(base64: string, mimeType: string | undefined, factor: number): Promise<{ base64: string; width: number; height: number } | null> {
   if (factor === 1) {
     const size = await getImageSize(base64, mimeType);
@@ -328,7 +304,7 @@ async function whataiFetch(path: string, init: RequestInit): Promise<Response> {
     const text = await resp.text().catch(() => "");
     const maxLen = 400;
     const preview = text.length > maxLen ? `${text.substring(0, maxLen)}...[truncated ${text.length - maxLen} chars]` : text;
-    throw new Error(`whatai API Error: ${resp.status} ${resp.statusText} ${preview}`);
+    throw new Error(sanitizeErrorMessage(`whatai API Error: ${resp.status} ${resp.statusText} ${preview}`));
   }
   return resp;
 }
@@ -342,7 +318,7 @@ async function whataiChatCompletions(body: unknown): Promise<ChatCompletionRespo
   const contentType = resp.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     const text = await resp.text();
-    throw new Error(`whatai returned non-JSON (${contentType}): ${text.substring(0, 200)}`);
+    throw new Error(sanitizeErrorMessage(`whatai returned non-JSON (${contentType}): ${text.substring(0, 200)}`));
   }
   
   return await resp.json();
@@ -470,10 +446,11 @@ export async function generateImageFromText(prompt: string, model?: string, opts
     return { newImageBase64: null, newImageMimeType: null, textResponse: `当前模型不支持该生图协议: ${usedModel}` };
   } catch (error) {
     console.error('whatai 图像生成失败:', error instanceof Error ? error.message : (typeof error === 'string' ? error : JSON.stringify(error)));
+    const safe = sanitizeErrorMessage(error);
     return {
       newImageBase64: null,
       newImageMimeType: null,
-      textResponse: `图像生成失败: ${error instanceof Error ? error.message : (typeof error === 'string' ? error : JSON.stringify(error))}`
+      textResponse: `图像生成失败: ${safe}`
     };
   }
 }
@@ -496,36 +473,36 @@ export async function editImage(
     let desiredAspectRatio = (opts?.aspectRatio && isSupportedAspectRatioText(opts.aspectRatio)) ? opts.aspectRatio.trim() : undefined;
     const strictSize = Boolean(opts?.strictSize ?? WHATAI_STRICT_SIZE);
 
-    let preparedImagesBase64: string[] = [];
     if (isNanoBananaModel(usedModel)) {
+      const uplinkImages: Array<{ href: string; mimeType?: string }> = [];
       for (const img of images) {
         const rawB64 = normalizeBase64(stripBase64Header(img.href));
         const mime = (img.mimeType && img.mimeType.startsWith('image/')) ? img.mimeType : detectMimeFromBase64(rawB64);
         const ratioText = desiredAspectRatio || await computeAspectRatioFromBase64(rawB64, mime) || '3:4';
-        const scaled = await resizeBase64ToMax(rawB64, mime, 1536, 1536);
-        if (scaled) {
-          preparedImagesBase64.push(scaled.base64);
-          desiredAspectRatio = ratioText;
-        } else {
-          preparedImagesBase64.push(rawB64);
-        }
+        uplinkImages.push({ href: rawB64, mimeType: mime });
+        desiredAspectRatio = ratioText;
       }
+      const uplink = await preprocessUplinkImages(uplinkImages, {
+        maxLongEdge: 1536,
+        mask: opts?.mask ? { href: opts.mask.href, mimeType: opts.mask.mimeType } : undefined,
+        debugLabel: 'whatai/editImage'
+      });
       const body = new FormData();
       body.append('model', usedModel);
       body.append('prompt', prompt);
       if (desiredAspectRatio) body.append('aspect_ratio', desiredAspectRatio);
       if ((usedModel || '').toLowerCase().trim() === 'nano-banana-2' && opts?.imageSize) body.append('image_size', opts.imageSize);
-      try { console.debug('[editImage] request form data', { desiredAspectRatio, imagesCount: preparedImagesBase64.length }); } catch { void 0; }
-      for (let i = 0; i < preparedImagesBase64.length; i++) {
-        const mime = images[i]?.mimeType || 'image/png';
-        const dataUrl = `data:${mime};base64,${preparedImagesBase64[i]}`;
+      try { console.debug('[editImage] request form data', { desiredAspectRatio, imagesCount: uplink.images.length }); } catch { void 0; }
+      for (let i = 0; i < uplink.images.length; i++) {
+        const img = uplink.images[i];
+        const mime = img?.mimeType || 'image/png';
+        const dataUrl = `data:${mime};base64,${img.base64}`;
         const blob = dataUrlToBlob(dataUrl);
         body.append('image', blob, `image${i}.${mime.split('/')[1] || 'png'}`);
       }
-      if (opts?.mask) {
-        const maskRaw = normalizeBase64(stripBase64Header(opts.mask.href));
-        const maskMime = (opts.mask.mimeType && opts.mask.mimeType.startsWith('image/')) ? opts.mask.mimeType : detectMimeFromBase64(maskRaw);
-        const maskDataUrl = `data:${maskMime};base64,${maskRaw}`;
+      if (uplink.mask) {
+        const maskMime = uplink.mask.mimeType || 'image/png';
+        const maskDataUrl = `data:${maskMime};base64,${uplink.mask.base64}`;
         const maskBlob = dataUrlToBlob(maskDataUrl);
         body.append('mask', maskBlob, `mask.${maskMime.split('/')[1] || 'png'}`);
       }
@@ -597,10 +574,17 @@ export async function editImage(
     const outputInstr = '只输出一行 data:image/png;base64,<...> 不要输出其它文字';
     const textPayload = opts?.aspectRatio ? `${prompt}\n[aspect_ratio:${opts.aspectRatio}]\n${outputInstr}` : `${prompt}\n${outputInstr}`;
     content.push({ type: "text", text: textPayload });
-    for (const img of images) {
-      const raw = normalizeBase64(stripBase64Header(img.href));
-      const mime = (img.mimeType && img.mimeType.startsWith('image/')) ? img.mimeType : detectMimeFromBase64(raw);
-      const url = `data:${mime};base64,${raw}`;
+    const uplink = await preprocessUplinkImages(
+      images.map((img) => {
+        const raw = normalizeBase64(stripBase64Header(img.href));
+        const mime = (img.mimeType && img.mimeType.startsWith('image/')) ? img.mimeType : detectMimeFromBase64(raw);
+        return { href: raw, mimeType: mime };
+      }),
+      { maxLongEdge: 2048, debugLabel: 'whatai/chatCompletions' }
+    );
+    for (const img of uplink.images) {
+      const mime = img.mimeType || 'image/png';
+      const url = `data:${mime};base64,${img.base64}`;
       content.push({ type: 'image_url', image_url: { url } });
     }
     const chat = await whataiChatCompletions({ model: usedModel, messages: [{ role: "user", content }], max_tokens: 1000 });
@@ -767,10 +751,11 @@ export async function editImage(
     
   } catch (error) {
     console.error('whatai 图像编辑失败:', error instanceof Error ? error.message : (typeof error === 'string' ? error : JSON.stringify(error)));
+    const safe = sanitizeErrorMessage(error);
     return {
       newImageBase64: null,
       newImageMimeType: null,
-      textResponse: `图像编辑失败: ${error instanceof Error ? error.message : (typeof error === 'string' ? error : JSON.stringify(error))}`
+      textResponse: `图像编辑失败: ${safe}`
     };
   }
 }
@@ -795,11 +780,39 @@ export async function generateVideo(
       duration: 5
     };
 
+    let imageUrlForApi: string | undefined = undefined;
     if (image) {
-      const imageBase64 = image.href.includes('base64,') 
-        ? image.href.split('base64,')[1] 
-        : image.href;
-      body.image = imageBase64;
+      const maybeDataUrl = extractDataUrlFromText(image.href);
+      let b64 = maybeDataUrl?.base64 || '';
+      let mime = (image.mimeType && image.mimeType.startsWith('image/')) ? image.mimeType : (maybeDataUrl?.mime || 'image/png');
+
+      if (!b64 && (image.href || '').includes('base64,')) {
+        const raw = normalizeBase64(stripBase64Header(image.href));
+        b64 = raw;
+        mime = detectMimeFromBase64(raw);
+      }
+
+      if (!b64) {
+        const viaCanvas = await tryLoadImageBase64(image.href);
+        if (viaCanvas) {
+          b64 = viaCanvas.base64;
+          mime = viaCanvas.mime;
+        }
+      }
+
+      if (b64) {
+        const uplink = await preprocessUplinkImages(
+          [{ href: b64, mimeType: mime }],
+          { maxLongEdge: 2048, debugLabel: 'whatai/generateVideo' }
+        );
+        const out = uplink.images[0];
+        const outMime = out?.mimeType || mime || 'image/png';
+        const outB64 = out?.base64 || b64;
+        imageUrlForApi = `data:${outMime};base64,${outB64}`;
+        body.image = outB64;
+      } else {
+        imageUrlForApi = image.href;
+      }
     }
 
     onProgress("正在发送视频生成请求...");
@@ -813,7 +826,7 @@ export async function generateVideo(
             { type: "text", text: `生成视频：${prompt}，宽高比：${aspectRatio}` },
             ...(image ? [{ 
               type: "image_url", 
-              image_url: { url: image.href } 
+              image_url: { url: imageUrlForApi || image.href } 
             }] : [])
           ]
         }
@@ -838,7 +851,7 @@ export async function generateVideo(
     
   } catch (error) {
     console.error('whatai 视频生成失败:', error);
-    throw new Error(`视频生成失败: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`视频生成失败: ${sanitizeErrorMessage(error)}`);
   }
 }
 
@@ -885,7 +898,7 @@ export async function generateText(
     
   } catch (error) {
     console.error('whatai 文本生成失败:', error);
-    throw new Error(`文本生成失败: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`文本生成失败: ${sanitizeErrorMessage(error)}`);
   }
 }
 

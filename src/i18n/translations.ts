@@ -299,6 +299,10 @@ export const translations = {
         noEffects: '暂无自定义效果。',
         defaultName: '我的自定义效果',
     },
+    recent: {
+        title: '最近使用',
+        noRecent: '暂无最近使用记录。',
+    },
     settings: {
         title: '画布设置',
         close: '关闭',

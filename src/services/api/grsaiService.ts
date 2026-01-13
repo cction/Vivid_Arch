@@ -1,4 +1,6 @@
 import { withRetry } from '@/utils/retry'
+import { preprocessUplinkImages } from '@/utils/uplinkPreprocess'
+import { sanitizeErrorMessage } from '@/utils/sanitizeErrorMessage'
 
 const GRSAI_BASE_URL = (() => {
   const raw = process.env.GRSAI_BASE_URL || 'https://grsai.dakka.com.cn'
@@ -45,9 +47,42 @@ function detectMimeFromBase64(b64: string): string {
   return 'image/png'
 }
 
+function parseDataUrl(input: string): { mime: string; base64: string } | null {
+  if (!input.startsWith('data:')) return null
+  const comma = input.indexOf(',')
+  if (comma <= 0) return null
+  const meta = input.slice(0, comma)
+  const raw = input.slice(comma + 1)
+  const metaMimeMatch = /data:(.*?)(;base64)?$/i.exec(meta)
+  const mime = (metaMimeMatch && metaMimeMatch[1]) ? metaMimeMatch[1] : 'image/png'
+  const base64 = normalizeBase64(stripBase64Header(raw))
+  return { mime, base64 }
+}
+
 async function resolveToGrsaiUrl(href: string, mimeType?: string): Promise<{ url: string; kind: 'http' | 'data' | 'fetched' | 'unknown' }> {
   const s = String(href || '')
-  if (/^https?:\/\//i.test(s)) return { url: s, kind: 'http' }
+  if (/^https?:\/\//i.test(s)) {
+    if (typeof fetch === 'function' && typeof FileReader !== 'undefined') {
+      try {
+        const r = await fetch(s)
+        const blob = await r.blob()
+        const reader = new FileReader()
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(String(reader.result || ''))
+          reader.onerror = () => reject(reader.error || new Error('FileReader failed'))
+          reader.readAsDataURL(blob)
+        })
+        const outMime = (blob.type && blob.type.startsWith('image/')) ? blob.type : (mimeType || 'image/png')
+        const outComma = dataUrl.indexOf(',')
+        const outRaw = outComma >= 0 ? dataUrl.slice(outComma + 1) : dataUrl
+        const outB64 = normalizeBase64(stripBase64Header(outRaw))
+        return { url: `data:${outMime};base64,${outB64}`, kind: 'fetched' }
+      } catch (err) {
+        try { console.debug('[grsai] resolve http image failed', { href: s.slice(0, 120), err: err instanceof Error ? err.message : String(err) }) } catch { void 0 }
+      }
+    }
+    return { url: s, kind: 'http' }
+  }
   if (s.startsWith('data:')) {
     const comma = s.indexOf(',')
     if (comma > 0) {
@@ -124,7 +159,7 @@ async function grsaiFetch(path: string, init: RequestInit): Promise<Response> {
     const text = await resp.text().catch(() => '')
     const maxLen = 400
     const preview = text.length > maxLen ? `${text.substring(0, maxLen)}...[truncated ${text.length - maxLen} chars]` : text
-    throw new Error(`grsai API Error: ${resp.status} ${resp.statusText} ${preview}`)
+    throw new Error(sanitizeErrorMessage(`grsai API Error: ${resp.status} ${resp.statusText} ${preview}`))
   }
   return resp
 }
@@ -192,7 +227,8 @@ async function parseImageJson(json: { data?: unknown; results?: ImageItem[]; [k:
       lastError = err instanceof Error ? err : new Error(String(err))
     }
     if (lastError) {
-      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：无法获取生成结果 (${lastError.message})`, status: 'failed', taskId, error: lastError.message }
+      const msg = sanitizeErrorMessage(lastError.message)
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：无法获取生成结果 (${msg})`, status: 'failed', taskId, error: msg }
     }
   }
   return { newImageBase64: null, newImageMimeType: null, textResponse: '图像生成失败：未找到输出', status: 'failed', taskId, error: '未找到输出' }
@@ -233,12 +269,13 @@ export async function getDrawResultOnce(taskId: string): Promise<GrsaiResult> {
     const errMsg = (json && (json.error || '')) || (json && json.data && (json.data.error || json.data.failure_reason || '')) || ''
     
     if (status === 'failed') {
-      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${errMsg || '未知错误'}`, status: 'failed', taskId, error: errMsg || '未知错误' }
+      const safe = sanitizeErrorMessage(errMsg || '未知错误')
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${safe}`, status: 'failed', taskId, error: safe }
     }
     // pending or processing
     return { newImageBase64: null, newImageMimeType: null, textResponse: '仍在生成中', status: 'pending', taskId }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = sanitizeErrorMessage(err)
     return { newImageBase64: null, newImageMimeType: null, textResponse: `查询失败: ${msg}`, status: 'failed', taskId, error: msg }
   }
 }
@@ -276,7 +313,8 @@ export async function generateImageFromText(
       return await pollDrawResult(id, 'url', usedModel)
     }
     if (errText) {
-      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${errText}`, status: 'failed', error: errText }
+      const safe = sanitizeErrorMessage(errText)
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败：${safe}`, status: 'failed', error: safe }
     }
     try {
       const preview = text.length > 240 ? `${text.slice(0, 240)}...[truncated ${text.length - 240} chars]` : text
@@ -284,7 +322,7 @@ export async function generateImageFromText(
     } catch { void 0 }
     return { newImageBase64: null, newImageMimeType: null, textResponse: '图像生成失败：未找到输出', status: 'failed', error: '未找到输出' }
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
+    const msg = sanitizeErrorMessage(error)
     return { newImageBase64: null, newImageMimeType: null, textResponse: `图像生成失败: ${msg}`, status: 'failed', error: msg }
   }
 }
@@ -303,15 +341,32 @@ export async function editImage(
   try {
     const usedModel = opts?.model || 'nano-banana-fast'
     const urls: string[] = []
+    const uplinkInputs: Array<{ href: string; mimeType?: string }> = []
+    const uplinkIndexMap: number[] = []
     for (let i = 0; i < images.length; i++) {
       const inHref = images[i].href
       const inMime = images[i].mimeType || 'image/png'
       const resolved = await resolveToGrsaiUrl(inHref, inMime)
-      urls.push(resolved.url)
+      const parsed = parseDataUrl(resolved.url)
+      if (parsed) {
+        uplinkInputs.push({ href: parsed.base64, mimeType: parsed.mime })
+        uplinkIndexMap.push(urls.length)
+        urls.push('')
+      } else {
+        urls.push(resolved.url)
+      }
       try {
         const preview = resolved.url.startsWith('data:') ? resolved.url.slice(0, 64) + '...' : resolved.url.slice(0, 120)
         console.debug('[grsai editImage] input url', { idx: i, kind: resolved.kind, preview })
       } catch { void 0 }
+    }
+    if (uplinkInputs.length > 0) {
+      const uplink = await preprocessUplinkImages(uplinkInputs, { maxLongEdge: 2048, debugLabel: 'grsai/editImage' })
+      for (let i = 0; i < uplink.images.length; i++) {
+        const out = uplink.images[i]
+        const at = uplinkIndexMap[i]
+        urls[at] = `data:${out.mimeType};base64,${out.base64}`
+      }
     }
     const body = {
       model: usedModel,
@@ -336,7 +391,8 @@ export async function editImage(
       return await pollDrawResult(id, 'url', usedModel)
     }
     if (errText) {
-      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像编辑失败：${errText}`, status: 'failed', error: errText }
+      const safe = sanitizeErrorMessage(errText)
+      return { newImageBase64: null, newImageMimeType: null, textResponse: `图像编辑失败：${safe}`, status: 'failed', error: safe }
     }
     try {
       const preview = text.length > 240 ? `${text.slice(0, 240)}...[truncated ${text.length - 240} chars]` : text
@@ -344,7 +400,7 @@ export async function editImage(
     } catch { void 0 }
     return { newImageBase64: null, newImageMimeType: null, textResponse: '图像编辑失败：未找到输出', status: 'failed', error: '未找到输出' }
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error)
+    const msg = sanitizeErrorMessage(error)
     return { newImageBase64: null, newImageMimeType: null, textResponse: `图像编辑失败: ${msg}`, status: 'failed', error: msg }
   }
 }

@@ -11,10 +11,11 @@ interface QuickPromptsProps {
     disabled: boolean;
     userEffects: UserEffect[];
     onDeleteUserEffect: (id: string) => void;
+    recentPrompts?: string[];
     className?: string;
 }
 
-export const QuickPrompts: React.FC<QuickPromptsProps> = ({ t, language, setPrompt, disabled, userEffects, onDeleteUserEffect, className }) => {
+export const QuickPrompts: React.FC<QuickPromptsProps> = ({ t, language, setPrompt, disabled, userEffects, onDeleteUserEffect, recentPrompts = [], className }) => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
@@ -68,6 +69,21 @@ export const QuickPrompts: React.FC<QuickPromptsProps> = ({ t, language, setProm
                     style={{ '--pod-left': `${Math.round(anchor.left + anchor.width / 2 - 320 / 2)}px`, '--pod-bottom': `${Math.round(window.innerHeight - anchor.top + 8)}px` } as React.CSSProperties}
                 >
                     <Panel className="pod-menu-panel max-h-96 overflow-y-auto pod-scrollbar-y">
+                        {recentPrompts.length > 0 && (
+                            <>
+                                <h4 className="pod-menu-header">{t('recent.title')}</h4>
+                                {recentPrompts.map((prompt, index) => (
+                                    <MenuItem
+                                        key={`recent-${index}`}
+                                        onClick={() => handleSelect(prompt)}
+                                        className="block w-full text-left truncate"
+                                    >
+                                        {prompt}
+                                    </MenuItem>
+                                ))}
+                                <div className="my-2 -mx-2 border-t border-[var(--border-color)]"></div>
+                            </>
+                        )}
                         <h4 className="pod-menu-header">{t('myEffects.title')}</h4>
                         {userEffects.length > 0 ? (
                             userEffects.map((effect) => (

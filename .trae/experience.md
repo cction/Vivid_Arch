@@ -21,6 +21,23 @@
 - 所有外部调用输出需包含调试信息（状态码、错误消息、关键参数），便于快速定位问题。
 - 网络错误（如 `Recv failure: Connection was reset`）需与认证错误区分；优先验证令牌权限与有效性，再排查网络或代理。
 
+## Iframe 提示词同步（PromptLab / p 站 → 宿主 / b 站）
+- 判定“宿主可用 / 子站缺失”的方法：在宿主页面点击 iframe 内“复制”后，若宿主控制台无任何 `message` 事件日志，且 PromptBar 仍为空，则优先判断为 iframe 未发送 `postMessage`（而非宿主拦截/写入失败）。
+- 对照协议文档：仓库内已有对接规范 `public/网页对接.md`，约定在“复制动作发生时”由 iframe 直接向父窗口发送 `VIVIDAI_PROMPT`，避免依赖剪贴板读权限（失败率高）。
+- 本次排查结论：
+  - 本地 iframe（`http://localhost:5173/`）环境：能看到 `VIVIDAI_READY` / `VIVIDAI_PROMPT`，宿主 PromptBar 能被写入，说明宿主监听与 `setPrompt` 链路正常。
+  - 线上 iframe（`https://p.vividai.com.cn/`）环境：点击“复制”后宿主未收到任何 `message`，PromptBar 不更新，说明线上 iframe 未按协议发送 `VIVIDAI_PROMPT`（或被线上逻辑/开关禁用）。
+- 快速验证要点（宿主侧）：
+  - 控制台需能看到 `message` 监听挂载与收到的消息（origin/type/sessionId/version），以区分“没发出”与“被拒收”。
+  - 用 DOM 直接读 PromptBar 当前值可快速判断同步是否生效：`document.querySelector('textarea.pod-prompt-textarea')?.value`。
+- 常见拒收点（宿主侧校验）：
+  - `event.origin` 不等于 iframe `src` 的 `origin`
+  - `event.source` 不是该 iframe 的 `contentWindow`
+  - `sessionId` 或 `version` 不匹配
+- 子站（iframe）实现关键点：
+  - 先通过 `VIVIDAI_INIT` 握手拿到 `hostOrigin = event.origin`，之后发送 prompt 时必须 `window.parent.postMessage(payload, hostOrigin)`，不要使用 `'*'` 广播。
+  - “复制按钮”点击时，除了 `navigator.clipboard.writeText` 外，应同时调用发送同步消息的函数（即使剪贴板写入失败也要同步）。
+
 ## IndexedDB（LastSession / 图片存储）
 - 同一个 IndexedDB 数据库若被不同模块以不同 version / 不同 objectStore 初始化，可能出现 “transaction 指定 object store 不存在” 的运行时异常（例如 lastSession 写入失败回退 localStorage）。
 - 处理策略：统一 DB 版本号，并在升级回调里确保创建所有必需的 stores（如 `images` 与 `lastSession`），避免模块间初始化顺序导致的缺 store。
